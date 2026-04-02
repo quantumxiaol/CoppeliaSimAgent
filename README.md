@@ -1,26 +1,67 @@
 # CoppeliaSimAgent
 
-面向 CoppeliaSim 的外部 Agent 开发脚手架，当前重点是先打通与仿真器的远程连接（ZMQ + WebSocket 端口可达性）。
+面向 CoppeliaSim 的外部 Agent 工程骨架。目标是把底层 Remote API 封装为可被 LLM Function Calling 稳定调用的工具集。
+
+## Reference
+
+[apiFunctions](https://manual.coppeliarobotics.com/en/apiFunctions.htm)
+
+[zmqRemoteApiOverview](https://manual.coppeliarobotics.com/en/zmqRemoteApiOverview.htm)
+
+## 当前状态
+
+已完成第一阶段：
+
+- `core/connection.py`: 全局连接管理、重连、`simIK/simOMPL` 预加载
+- `tools/*`: 场景感知、基础几何体、模型管理、IK 与夹爪信号控制
+- `agent/tool_registry.py`: 基于 Pydantic 的工具注册和 JSON Schema 导出
+- `tests/*`: 连接管理与工具层单元测试（mock/fake sim）
+- `tests/connect_to_sim.py`: 真机连通性脚本（ZMQ RPC + 端口检查）
+
+## 目录结构
+
+```text
+src/coppeliasimagent/
+├── __init__.py
+├── core/
+│   ├── __init__.py
+│   ├── connection.py
+│   └── exceptions.py
+├── tools/
+│   ├── __init__.py
+│   ├── schemas.py
+│   ├── scene.py
+│   ├── primitives.py
+│   ├── models.py
+│   └── kinematics.py
+└── agent/
+    ├── __init__.py
+    └── tool_registry.py
+```
 
 ## 环境要求
 
 - CoppeliaSim `v4.6.0+`
-- Python `3.13+`（与当前 `pyproject.toml` 一致）
+- Python `3.13+`
 - `uv`
 
 ## 安装依赖
-
-在项目根目录执行：
 
 ```bash
 uv add coppeliasim-zmqremoteapi-client pyzmq cbor2 click pydantic openai python-dotenv numpy scipy
 ```
 
-如果你是首次执行，`uv` 会自动创建 `.venv`。
+## 开发模式导入路径
+
+项目采用 `src/` 布局，开发调试时建议：
+
+```bash
+export PYTHONPATH=src
+```
 
 ## 启动 CoppeliaSim
 
-先启动 CoppeliaSim，再观察底部日志，确认两个服务都已启动：
+启动后确认日志包含：
 
 ```text
 [sandboxScript:info] Simulator launched, welcome!
@@ -28,30 +69,99 @@ uv add coppeliasim-zmqremoteapi-client pyzmq cbor2 click pydantic openai python-
 [Connectivity >> ZMQ remote API server@addOnScript:info] ZeroMQ Remote API server starting (rpcPort=23000)...
 ```
 
-## 连接测试
-
-项目提供了连接测试脚本：`tests/Connect2Sim.py`
+## 连通性测试
 
 ```bash
-uv run python tests/Connect2Sim.py
+uv run python tests/connect_to_sim.py
 ```
 
 可选参数：
 
 ```bash
-uv run python tests/Connect2Sim.py --host 127.0.0.1 --zmq-port 23000 --ws-port 23050 --timeout 3.0
+uv run python tests/connect_to_sim.py --host 127.0.0.1 --zmq-port 23000 --timeout 3.0
+uv run python tests/connect_to_sim.py --check-ws --ws-port 23050
 ```
 
-测试内容：
+注意：
 
-- 检查 ZMQ 端口 (`23000`) TCP 可达
-- 检查 WebSocket 端口 (`23050`) TCP 可达
-- 通过 `coppeliasim-zmqremoteapi-client` 执行一次真实 RPC 调用（读取仿真时间步长）
+- 默认不会探测 `23050`，以避免 `simWS ... handle_read_handshake ... End of File` 日志。
+- 当你需要验证 WebSocket 端口时，再加 `--check-ws`。
+- 以 `[PASS] ZMQ RPC OK ...` 为连接成功的关键判据。
 
-全部通过会返回 `exit code 0`；任意失败会返回 `exit code 1`。
+## Live 工具脚本（逐个手动执行）
 
-## 常见问题
+以下脚本会连接当前正在运行的 CoppeliaSim，并真实调用工具函数：
 
-- `Connection refused`：通常是 CoppeliaSim 未启动，或端口配置不是 `23000/23050`。
-- 长时间无响应：先确认本机防火墙策略，再确认 CoppeliaSim 的 Remote API 插件是否被禁用。
-- 主机不是本地：把 `--host` 改成远程 IP。
+```bash
+PYTHONPATH=src uv run python tests/live_tool_spawn_red_cuboid.py
+PYTHONPATH=src uv run python tests/live_tool_move_red_cuboid.py
+PYTHONPATH=src uv run python tests/live_tool_remove_red_cuboid.py
+PYTHONPATH=src uv run python tests/live_tool_scene_graph.py --max-items 10
+PYTHONPATH=src uv run python tests/live_tool_check_collision.py
+PYTHONPATH=src uv run python tests/live_tool_set_parent_child.py
+```
+
+放置机器人模型（需要你提供 `.ttm` 路径）：
+
+```bash
+PYTHONPATH=src uv run python tests/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.ttm
+```
+
+说明：
+
+- 这些脚本不是 `unittest` 用例，因此文件名不以 `test_` 开头。
+- `test_*.py` 用于离线单元测试，`live_tool_*.py` 用于在线真实仿真测试。
+
+## 工具函数概览
+
+### 场景感知
+
+- `get_scene_graph(include_types, round_digits)`
+- `check_collision(entity1, entity2)`
+
+### 基础几何体
+
+- `spawn_primitive(primitive, size, position, color, dynamic, relative_to)`
+- `spawn_cuboid(size, position, color, dynamic, relative_to)`
+- `set_object_pose(handle, position, orientation_deg, relative_to)`
+- `remove_object(handle)`
+
+### 模型与装配
+
+- `load_model(model_path, position, orientation_deg, relative_to)`
+- `set_parent_child(child_handle, parent_handle, keep_in_place)`
+
+### 运动学与末端执行器
+
+- `spawn_waypoint(position, size, relative_to)`
+- `setup_ik_link(base_handle, tip_handle, target_handle, constraints_mask)`
+- `move_ik_target(environment_handle, group_handle, target_handle, position, relative_to, steps)`
+- `actuate_gripper(signal_name, closed)`
+
+## Pydantic 校验约定
+
+所有工具函数在执行前都会经过 Pydantic 校验，主要约束：
+
+- 向量参数必须是长度为 3 的有限数值
+- 颜色范围必须在 `[0, 1]`
+- 尺寸参数必须大于 `0`
+- 旋转输入统一使用角度制 (`orientation_deg`)，底层自动转换弧度
+
+## Tool Registry（给 LLM 用）
+
+`agent/tool_registry.py` 提供：
+
+- `get_openai_tools()`: 导出 OpenAI Function Calling 所需 JSON Schema
+- `invoke_tool(name, payload)`: 验证输入并调用工具函数
+
+## 运行单元测试
+
+```bash
+uv run python -m unittest discover -s tests -p "test_*.py"
+```
+
+这些测试不依赖实时 CoppeliaSim 进程，主要覆盖：
+
+- 连接管理（超时、重连、插件可用性）
+- 工具函数参数校验与 API 调用行为
+- Tool registry 的 schema 导出与校验拦截

@@ -38,6 +38,11 @@ def parse_args() -> argparse.Namespace:
         help="WebSocket Remote API port (default: 23050)",
     )
     parser.add_argument(
+        "--check-ws",
+        action="store_true",
+        help="Also test WebSocket port reachability (may produce simWS handshake logs).",
+    )
+    parser.add_argument(
         "--timeout",
         type=float,
         default=float(os.getenv("COPPELIASIM_TIMEOUT", "3.0")),
@@ -88,9 +93,12 @@ def main() -> int:
     print(("[PASS] " if zmq_tcp_ok else "[FAIL] ") + zmq_tcp_msg)
     ok = ok and zmq_tcp_ok
 
-    ws_tcp_ok, ws_tcp_msg = check_tcp(args.host, args.ws_port, args.timeout)
-    print(("[PASS] " if ws_tcp_ok else "[FAIL] ") + ws_tcp_msg)
-    ok = ok and ws_tcp_ok
+    if args.check_ws:
+        ws_tcp_ok, ws_tcp_msg = check_tcp(args.host, args.ws_port, args.timeout)
+        print(("[PASS] " if ws_tcp_ok else "[FAIL] ") + ws_tcp_msg)
+        ok = ok and ws_tcp_ok
+    else:
+        print(f"[SKIP] WebSocket TCP check skipped ({args.host}:{args.ws_port})")
 
     zmq_rpc_ok, zmq_rpc_msg = check_zmq_rpc(args.host, args.zmq_port, args.timeout)
     print(("[PASS] " if zmq_rpc_ok else "[FAIL] ") + zmq_rpc_msg)

@@ -15,3 +15,14 @@ dependencies = [
     "pyzmq>=27.1.0",
     "scipy>=1.17.1",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"] 
+
+[tool.setuptools.package-dir]
+"" = "src" 
+
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
