@@ -8,19 +8,37 @@ dependencies = [
     "cbor2>=5.9.0",
     "click>=8.3.1",
     "coppeliasim-zmqremoteapi-client>=2.0.4",
+    "fastapi>=0.135.3",
+    "langchain>=0.3.28",
+    "langchain-core>=0.3.83",
+    "langchain-mcp>=0.2.1",
+    "langchain-mcp-adapters>=0.2.0",
+    "langchain-openai>=0.3.35",
+    "langgraph>=1.0.1",
+    "mcp>=1.27.0",
+    "mcp-server>=0.1.4",
     "numpy>=2.4.4",
     "openai>=2.30.0",
     "pydantic>=2.12.5",
+    "pydantic-settings>=2.13.1",
     "python-dotenv>=1.2.2",
     "pyzmq>=27.1.0",
     "scipy>=1.17.1",
+    "uvicorn>=0.42.0",
 ]
+
+[project.scripts]
+coppelia-mcp-server = "coppeliasimagent.servers.mcp_server:main"
+coppelia-agent-cli = "coppeliasimagent.cli.chat:main"
 
 [tool.setuptools.packages.find]
 where = ["src"] 
 
 [tool.setuptools.package-dir]
 "" = "src" 
+
+[tool.setuptools.package-data]
+"coppeliasimagent.prompts" = ["*.md", "*.txt"]
 
 
 [build-system]

@@ -1,0 +1,203 @@
+"""MCP server exposing CoppeliaSim tools."""
+
+from __future__ import annotations
+
+import argparse
+from typing import Any
+
+from mcp.server.fastmcp import FastMCP
+
+from ..tools.kinematics import actuate_gripper, move_ik_target, setup_ik_link, spawn_waypoint
+from ..tools.models import load_model, set_parent_child
+from ..tools.primitives import remove_object, set_object_pose, spawn_cuboid, spawn_primitive
+from ..tools.scene import check_collision, get_scene_graph
+
+
+def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool = False) -> FastMCP:
+    """Create MCP server and register all CoppeliaSim tools."""
+    mcp = FastMCP(
+        name="CoppeliaSimAgent MCP Server",
+        instructions=(
+            "MCP server for controlling CoppeliaSim scenes. "
+            "All positions use [x, y, z] in meters, and z is the height axis."
+        ),
+        host=host,
+        port=port,
+        debug=debug,
+        sse_path="/sse",
+        message_path="/messages/",
+        streamable_http_path="/mcp",
+        json_response=True,
+        stateless_http=True,
+    )
+
+    @mcp.tool(name="get_scene_graph", description="Get scene graph (name, handle, pose).")
+    def get_scene_graph_tool(
+        include_types: list[str] | None = None,
+        round_digits: int = 3,
+    ) -> dict[str, dict[str, object]]:
+        return get_scene_graph(include_types=include_types, round_digits=round_digits)
+
+    @mcp.tool(name="check_collision", description="Check collision between two entities.")
+    def check_collision_tool(entity1: int, entity2: int) -> dict[str, object]:
+        collides = check_collision(entity1=entity1, entity2=entity2)
+        return {"entity1": entity1, "entity2": entity2, "collides": collides}
+
+    @mcp.tool(name="spawn_primitive", description="Spawn a primitive shape.")
+    def spawn_primitive_tool(
+        primitive: str,
+        size: list[float],
+        position: list[float],
+        color: list[float] | None = None,
+        dynamic: bool = True,
+        relative_to: int = -1,
+    ) -> dict[str, int]:
+        handle = spawn_primitive(
+            primitive=primitive,
+            size=size,
+            position=position,
+            color=color,
+            dynamic=dynamic,
+            relative_to=relative_to,
+        )
+        return {"handle": handle}
+
+    @mcp.tool(name="spawn_cuboid", description="Spawn a cuboid.")
+    def spawn_cuboid_tool(
+        size: list[float],
+        position: list[float],
+        color: list[float] | None = None,
+        dynamic: bool = True,
+        relative_to: int = -1,
+    ) -> dict[str, int]:
+        handle = spawn_cuboid(
+            size=size,
+            position=position,
+            color=color,
+            dynamic=dynamic,
+            relative_to=relative_to,
+        )
+        return {"handle": handle}
+
+    @mcp.tool(name="set_object_pose", description="Set object pose with optional orientation (degrees).")
+    def set_object_pose_tool(
+        handle: int,
+        position: list[float] | None = None,
+        orientation_deg: list[float] | None = None,
+        relative_to: int = -1,
+    ) -> dict[str, int]:
+        out_handle = set_object_pose(
+            handle=handle,
+            position=position,
+            orientation_deg=orientation_deg,
+            relative_to=relative_to,
+        )
+        return {"handle": out_handle}
+
+    @mcp.tool(name="remove_object", description="Remove one object by handle.")
+    def remove_object_tool(handle: int) -> dict[str, Any]:
+        remove_object(handle=handle)
+        return {"status": "success", "handle": handle}
+
+    @mcp.tool(name="load_model", description="Load a .ttm model and place it.")
+    def load_model_tool(
+        model_path: str,
+        position: list[float],
+        orientation_deg: list[float] | None = None,
+        relative_to: int = -1,
+    ) -> dict[str, int]:
+        handle = load_model(
+            model_path=model_path,
+            position=position,
+            orientation_deg=orientation_deg,
+            relative_to=relative_to,
+        )
+        return {"handle": handle}
+
+    @mcp.tool(name="set_parent_child", description="Set parent-child relation between two handles.")
+    def set_parent_child_tool(child_handle: int, parent_handle: int, keep_in_place: bool = True) -> dict[str, Any]:
+        set_parent_child(
+            child_handle=child_handle,
+            parent_handle=parent_handle,
+            keep_in_place=keep_in_place,
+        )
+        return {
+            "status": "success",
+            "child_handle": child_handle,
+            "parent_handle": parent_handle,
+            "keep_in_place": keep_in_place,
+        }
+
+    @mcp.tool(name="spawn_waypoint", description="Spawn a Dummy waypoint for IK target.")
+    def spawn_waypoint_tool(position: list[float], size: float = 0.02, relative_to: int = -1) -> dict[str, int]:
+        handle = spawn_waypoint(position=position, size=size, relative_to=relative_to)
+        return {"handle": handle}
+
+    @mcp.tool(name="setup_ik_link", description="Set up IK chain base-tip-target.")
+    def setup_ik_link_tool(
+        base_handle: int,
+        tip_handle: int,
+        target_handle: int,
+        constraints_mask: int | None = None,
+    ) -> dict[str, Any]:
+        return setup_ik_link(
+            base_handle=base_handle,
+            tip_handle=tip_handle,
+            target_handle=target_handle,
+            constraints_mask=constraints_mask,
+        )
+
+    @mcp.tool(name="move_ik_target", description="Move IK target and solve IK.")
+    def move_ik_target_tool(
+        environment_handle: int,
+        group_handle: int,
+        target_handle: int,
+        position: list[float],
+        relative_to: int = -1,
+        steps: int = 1,
+    ) -> dict[str, Any]:
+        move_ik_target(
+            environment_handle=environment_handle,
+            group_handle=group_handle,
+            target_handle=target_handle,
+            position=position,
+            relative_to=relative_to,
+            steps=steps,
+        )
+        return {
+            "status": "success",
+            "environment_handle": environment_handle,
+            "group_handle": group_handle,
+            "target_handle": target_handle,
+        }
+
+    @mcp.tool(name="actuate_gripper", description="Set int signal for gripper open/close.")
+    def actuate_gripper_tool(signal_name: str, closed: bool) -> dict[str, Any]:
+        signal_value = actuate_gripper(signal_name=signal_name, closed=closed)
+        return {"status": "success", "signal_name": signal_name, "value": signal_value}
+
+    return mcp
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run CoppeliaSimAgent MCP server")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default="stdio",
+        help="MCP transport to use",
+    )
+    parser.add_argument("--host", default="127.0.0.1", help="Host for HTTP transports")
+    parser.add_argument("--port", type=int, default=7777, help="Port for HTTP transports")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    server = create_mcp_server(host=args.host, port=args.port, debug=args.debug)
+    server.run(transport=args.transport)
+
+
+if __name__ == "__main__":
+    main()
