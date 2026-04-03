@@ -17,7 +17,7 @@ if str(SRC) not in sys.path:
 
 
 def parse_vec3(raw: str) -> list[float]:
-    """Parse 'x,y,z' into a 3-float vector."""
+    """Parse 'x,y,z' into a 3-float vector (`z` is height / up axis)."""
     parts = [p.strip() for p in raw.split(",")]
     if len(parts) != 3:
         raise argparse.ArgumentTypeError("vector must be in format x,y,z")

@@ -16,7 +16,12 @@ from coppeliasimagent.tools.models import load_model
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Load one robot model into CoppeliaSim")
     parser.add_argument("--model-path", required=True, help="Path to .ttm model file")
-    parser.add_argument("--position", type=parse_vec3, default=[0.0, 0.0, 0.0], help="Base position x,y,z")
+    parser.add_argument(
+        "--position",
+        type=parse_vec3,
+        default=[0.0, 0.0, 0.0],
+        help="Base position x,y,z (z is height)",
+    )
     parser.add_argument(
         "--orientation-deg",
         type=parse_vec3,

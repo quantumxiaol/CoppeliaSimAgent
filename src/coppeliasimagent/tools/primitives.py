@@ -47,7 +47,7 @@ def spawn_primitive(
     参数:
         primitive: 几何体类型，支持 `cuboid` / `sphere` / `cylinder`。
         size: 尺寸 `[x, y, z]`，单位米 (m)。每个值必须 > 0。
-        position: 目标坐标 `[x, y, z]`。
+        position: 目标坐标 `[x, y, z]`。约定 `z` 为高度（up 轴）。
         color: RGB，范围 `[0, 1]`，默认 `[0.8, 0.8, 0.8]`。
         dynamic: `True` 时设置为可响应物理。
         relative_to: 参考坐标系句柄，`-1` 表示世界坐标。
@@ -94,7 +94,7 @@ def spawn_cuboid(
 
     参数:
         size: 长方体尺寸 `[x, y, z]`，单位米 (m)。例如 `[0.1, 0.1, 0.1]`。
-        position: 生成的空间坐标 `[x, y, z]`。
+        position: 生成的空间坐标 `[x, y, z]`。约定 `z` 为高度（up 轴）。
         color: RGB 颜色值，范围 `[0, 1]`，默认浅灰色。
         dynamic: 是否启用动力学属性（受重力与碰撞响应）。
         relative_to: 参考坐标系句柄，`-1` 为世界坐标。
@@ -139,7 +139,7 @@ def set_object_pose(
 
     参数:
         handle: 目标物体句柄。
-        position: 目标位置 `[x, y, z]`。
+        position: 目标位置 `[x, y, z]`。约定 `z` 为高度（up 轴）。
         orientation_deg: 欧拉角（角度制）。
         relative_to: 参考坐标系句柄，`-1` 为世界坐标。
 

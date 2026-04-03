@@ -32,7 +32,10 @@ def _default_constraint_mask(simik: object) -> int:
 
 
 def spawn_waypoint(position: list[float], size: float = 0.02, relative_to: int = -1) -> int:
-    """生成一个 Dummy 作为 IK Target 航点。"""
+    """生成一个 Dummy 作为 IK Target 航点。
+
+    `position` 采用 `[x, y, z]`，其中 `z` 为高度（up 轴）。
+    """
     try:
         payload = SpawnWaypointInput.model_validate(
             {"position": position, "size": size, "relative_to": relative_to}
@@ -106,7 +109,10 @@ def move_ik_target(
     relative_to: int = -1,
     steps: int = 1,
 ) -> None:
-    """移动 IK target，并循环执行 IK 求解。"""
+    """移动 IK target，并循环执行 IK 求解。
+
+    `position` 采用 `[x, y, z]`，其中 `z` 为高度（up 轴）。
+    """
     try:
         payload = MoveIKTargetInput.model_validate(
             {

@@ -25,7 +25,7 @@ def load_model(
 
     参数:
         model_path: 模型路径（绝对/相对路径均可）。
-        position: 目标位置 `[x, y, z]`。
+        position: 目标位置 `[x, y, z]`。约定 `z` 为高度（up 轴）。
         orientation_deg: 欧拉角（角度制），可选。
         relative_to: 参考坐标系句柄，`-1` 表示世界坐标。
 

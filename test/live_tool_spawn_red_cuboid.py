@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
         "--position",
         type=parse_vec3,
         default=[0.0, 0.0, 0.3],
-        help="Spawn position, format x,y,z (default: 0,0,0.3)",
+        help="Spawn position, format x,y,z (z is height, default: 0,0,0.3)",
     )
     return parser.parse_args()
 
