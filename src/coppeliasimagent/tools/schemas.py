@@ -129,6 +129,33 @@ class SetObjectPoseInput(ToolInputModel):
         return self
 
 
+class DuplicateObjectInput(ToolInputModel):
+    handle: int
+    position: list[float] | None = Field(default=None, min_length=3, max_length=3)
+    offset: list[float] | None = Field(default=None, min_length=3, max_length=3)
+    relative_to: int = -1
+
+    @field_validator("position")
+    @classmethod
+    def validate_position(cls, value: list[float] | None) -> list[float] | None:
+        if value is None:
+            return None
+        return _validate_vec3(value, field_name="position")
+
+    @field_validator("offset")
+    @classmethod
+    def validate_offset(cls, value: list[float] | None) -> list[float] | None:
+        if value is None:
+            return None
+        return _validate_vec3(value, field_name="offset")
+
+    @model_validator(mode="after")
+    def validate_move_args(self) -> "DuplicateObjectInput":
+        if self.position is not None and self.offset is not None:
+            raise ValueError("position and offset cannot both be provided")
+        return self
+
+
 class RemoveObjectInput(ToolInputModel):
     handle: int
 
@@ -171,6 +198,26 @@ class GetSceneGraphInput(ToolInputModel):
         default_factory=lambda: [SceneObjectType.SHAPE, SceneObjectType.DUMMY]
     )
     round_digits: int = Field(default=3, ge=0, le=8)
+
+
+class FindObjectsInput(ToolInputModel):
+    name_query: str | None = None
+    exact_name: bool = False
+    include_types: list[SceneObjectType] = Field(
+        default_factory=lambda: [SceneObjectType.SHAPE, SceneObjectType.DUMMY]
+    )
+    round_digits: int = Field(default=3, ge=0, le=8)
+    limit: int = Field(default=20, ge=1, le=200)
+
+    @field_validator("name_query")
+    @classmethod
+    def validate_name_query(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            raise ValueError("name_query cannot be blank")
+        return text
 
 
 class CheckCollisionInput(ToolInputModel):

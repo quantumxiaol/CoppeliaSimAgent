@@ -53,10 +53,15 @@ class FakeSim:
         handle = self.next_handle
         self.next_handle += 1
         self.calls.append(("createPrimitiveShape", (primitive, size)))
+        self.object_types[handle] = self.object_shape_type
+        self.object_names[handle] = f"Cuboid#{handle}"
+        self.object_positions[handle] = [0.0, 0.0, 0.0]
+        self.object_orientations[handle] = [0.0, 0.0, 0.0]
         return handle
 
     def setObjectPosition(self, handle: int, relative_to: int, position: list[float]) -> None:  # noqa: N802
         self.calls.append(("setObjectPosition", (handle, relative_to, position)))
+        self.object_positions[handle] = [float(v) for v in position]
 
     def setShapeColor(self, handle: int, component: object, color_comp: int, color: list[float]) -> None:  # noqa: N802
         self.calls.append(("setShapeColor", (handle, component, color_comp, color)))
@@ -66,6 +71,7 @@ class FakeSim:
 
     def setObjectOrientation(self, handle: int, relative_to: int, orientation: list[float]) -> None:  # noqa: N802
         self.calls.append(("setObjectOrientation", (handle, relative_to, orientation)))
+        self.object_orientations[handle] = [float(v) for v in orientation]
 
     def removeObject(self, handle: int) -> None:  # noqa: N802
         self.calls.append(("removeObject", (handle,)))
@@ -82,9 +88,20 @@ class FakeSim:
     def setObjectParent(self, child: int, parent: int, keep_in_place: bool) -> None:  # noqa: N802
         self.calls.append(("setObjectParent", (child, parent, keep_in_place)))
 
+    def copyPasteObjects(self, handles: list[int], options: int = 0) -> list[int]:  # noqa: N802
+        self.calls.append(("copyPasteObjects", (handles, options)))
+        src = handles[0]
+        out = self.next_handle
+        self.next_handle += 1
+        self.object_types[out] = self.object_types[src]
+        self.object_names[out] = f"{self.object_names[src]}_copy"
+        self.object_positions[out] = list(self.object_positions[src])
+        self.object_orientations[out] = list(self.object_orientations[src])
+        return [out]
+
     def getObjectsInTree(self, root: int) -> list[int]:  # noqa: N802
         self.calls.append(("getObjectsInTree", (root,)))
-        return [1, 2, 3]
+        return sorted(self.object_names.keys())
 
     def getObjectInt32Param(self, handle: int, param: int) -> int:  # noqa: N802
         return self.object_types[handle]
@@ -200,6 +217,28 @@ class TestTools(unittest.TestCase):
         self.assertEqual(graph["shape_a"]["position"][0], 0.123)
         self.assertTrue(collides)
         self.assertFalse(no_collide)
+
+    def test_find_objects_by_name(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.scene.get_sim", return_value=sim):
+            items = scene.find_objects(name_query="shape", include_types=["shape"], exact_name=False, limit=10)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["name"], "shape_a")
+        self.assertEqual(items[0]["handle"], 1)
+
+    def test_duplicate_object_with_offset(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.primitives.get_sim", return_value=sim):
+            out = primitives.duplicate_object(handle=1, offset=[0.1, 0.0, 0.0])
+
+        self.assertIsInstance(out, int)
+        self.assertIn(("copyPasteObjects", ([1], 0)), sim.calls)
+        self.assertAlmostEqual(sim.object_positions[out][0], 0.223456, places=6)
+
+    def test_duplicate_object_rejects_both_position_and_offset(self) -> None:
+        with self.assertRaises(ToolValidationError):
+            primitives.duplicate_object(handle=1, position=[0.0, 0.0, 0.0], offset=[0.1, 0.0, 0.0])
 
     def test_kinematics_functions(self) -> None:
         sim = FakeSim()

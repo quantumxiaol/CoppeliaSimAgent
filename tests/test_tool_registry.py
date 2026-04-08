@@ -20,6 +20,8 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("spawn_cuboid", names)
         self.assertIn("get_scene_graph", names)
         self.assertIn("setup_ik_link", names)
+        self.assertIn("find_objects", names)
+        self.assertIn("duplicate_object", names)
 
     def test_unknown_tool_raises(self) -> None:
         with self.assertRaises(KeyError):

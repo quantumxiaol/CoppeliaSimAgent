@@ -9,8 +9,8 @@ from mcp.server.fastmcp import FastMCP
 
 from ..tools.kinematics import actuate_gripper, move_ik_target, setup_ik_link, spawn_waypoint
 from ..tools.models import load_model, set_parent_child
-from ..tools.primitives import remove_object, set_object_pose, spawn_cuboid, spawn_primitive
-from ..tools.scene import check_collision, get_scene_graph
+from ..tools.primitives import duplicate_object, remove_object, set_object_pose, spawn_cuboid, spawn_primitive
+from ..tools.scene import check_collision, find_objects, get_scene_graph
 
 
 def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool = False) -> FastMCP:
@@ -37,6 +37,23 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         round_digits: int = 3,
     ) -> dict[str, dict[str, object]]:
         return get_scene_graph(include_types=include_types, round_digits=round_digits)
+
+    @mcp.tool(name="find_objects", description="Find scene objects by name query and type filters.")
+    def find_objects_tool(
+        name_query: str | None = None,
+        exact_name: bool = False,
+        include_types: list[str] | None = None,
+        round_digits: int = 3,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        items = find_objects(
+            name_query=name_query,
+            exact_name=exact_name,
+            include_types=include_types,
+            round_digits=round_digits,
+            limit=limit,
+        )
+        return {"count": len(items), "items": items}
 
     @mcp.tool(name="check_collision", description="Check collision between two entities.")
     def check_collision_tool(entity1: int, entity2: int) -> dict[str, object]:
@@ -98,6 +115,21 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
     def remove_object_tool(handle: int) -> dict[str, Any]:
         remove_object(handle=handle)
         return {"status": "success", "handle": handle}
+
+    @mcp.tool(name="duplicate_object", description="Duplicate one object by handle with optional move.")
+    def duplicate_object_tool(
+        handle: int,
+        position: list[float] | None = None,
+        offset: list[float] | None = None,
+        relative_to: int = -1,
+    ) -> dict[str, int]:
+        out_handle = duplicate_object(
+            handle=handle,
+            position=position,
+            offset=offset,
+            relative_to=relative_to,
+        )
+        return {"handle": out_handle}
 
     @mcp.tool(name="load_model", description="Load a .ttm model and place it.")
     def load_model_tool(

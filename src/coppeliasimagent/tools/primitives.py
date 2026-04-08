@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from ..core.connection import get_sim
 from ..core.exceptions import ToolValidationError
 from .schemas import (
+    DuplicateObjectInput,
     PrimitiveType,
     RemoveObjectInput,
     SetObjectPoseInput,
@@ -183,3 +184,63 @@ def remove_object(handle: int) -> None:
 
     # Backward compatibility with old APIs (deprecated in recent versions).
     sim.removeObject(payload.handle)
+
+
+def _extract_first_handle(copy_result: object) -> int:
+    if isinstance(copy_result, int):
+        return int(copy_result)
+    if isinstance(copy_result, (list, tuple)):
+        if not copy_result:
+            raise RuntimeError("copyPasteObjects returned no handles")
+        head = copy_result[0]
+        if isinstance(head, (list, tuple)):
+            if not head:
+                raise RuntimeError("copyPasteObjects returned empty nested handles")
+            head = head[0]
+        return int(head)
+    raise RuntimeError(f"Unexpected copyPasteObjects result type: {type(copy_result)!r}")
+
+
+def duplicate_object(
+    handle: int,
+    position: list[float] | None = None,
+    offset: list[float] | None = None,
+    relative_to: int = -1,
+) -> int:
+    """复制对象（按句柄）并可选移动新副本。
+
+    参数:
+        handle: 要复制的源对象句柄。
+        position: 若提供，复制后把新对象移动到该绝对/相对位置 `[x, y, z]`。
+        offset: 若提供，复制后在当前位置基础上偏移 `[dx, dy, dz]`。
+        relative_to: 参考坐标系句柄，`-1` 表示世界坐标。
+
+    返回:
+        新复制对象的句柄。
+    """
+    try:
+        payload = DuplicateObjectInput.model_validate(
+            {
+                "handle": handle,
+                "position": position,
+                "offset": offset,
+                "relative_to": relative_to,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    if not hasattr(sim, "copyPasteObjects"):
+        raise RuntimeError("Current CoppeliaSim API does not expose copyPasteObjects")
+
+    new_handle = _extract_first_handle(sim.copyPasteObjects([payload.handle], 0))
+
+    if payload.position is not None:
+        sim.setObjectPosition(new_handle, payload.relative_to, payload.position)
+    elif payload.offset is not None:
+        current = sim.getObjectPosition(new_handle, payload.relative_to)
+        target = [float(current[i]) + payload.offset[i] for i in range(3)]
+        sim.setObjectPosition(new_handle, payload.relative_to, target)
+
+    return int(new_handle)

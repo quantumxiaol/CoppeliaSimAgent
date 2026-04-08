@@ -9,11 +9,13 @@ from pydantic import BaseModel
 
 from ..tools.kinematics import actuate_gripper, move_ik_target, setup_ik_link, spawn_waypoint
 from ..tools.models import load_model, set_parent_child
-from ..tools.primitives import remove_object, set_object_pose, spawn_cuboid, spawn_primitive
-from ..tools.scene import check_collision, get_scene_graph
+from ..tools.primitives import duplicate_object, remove_object, set_object_pose, spawn_cuboid, spawn_primitive
+from ..tools.scene import check_collision, find_objects, get_scene_graph
 from ..tools.schemas import (
     ActuateGripperInput,
     CheckCollisionInput,
+    DuplicateObjectInput,
+    FindObjectsInput,
     GetSceneGraphInput,
     LoadModelInput,
     MoveIKTargetInput,
@@ -58,6 +60,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         input_model=GetSceneGraphInput,
         handler=get_scene_graph,
     ),
+    "find_objects": ToolDefinition(
+        name="find_objects",
+        description="Find scene objects by name query and object type filters.",
+        input_model=FindObjectsInput,
+        handler=find_objects,
+    ),
     "check_collision": ToolDefinition(
         name="check_collision",
         description="Run collision check between two entities/collections.",
@@ -87,6 +95,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Remove an object by handle from the scene.",
         input_model=RemoveObjectInput,
         handler=remove_object,
+    ),
+    "duplicate_object": ToolDefinition(
+        name="duplicate_object",
+        description="Duplicate one object by handle with optional reposition/offset.",
+        input_model=DuplicateObjectInput,
+        handler=duplicate_object,
     ),
     "load_model": ToolDefinition(
         name="load_model",

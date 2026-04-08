@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from ..core.connection import get_sim
 from ..core.exceptions import CollisionDetectedError, ToolValidationError
-from .schemas import CheckCollisionInput, GetSceneGraphInput
+from .schemas import CheckCollisionInput, FindObjectsInput, GetSceneGraphInput
 
 _OBJECT_TYPE_ATTRS = {
     "shape": "object_shape_type",
@@ -116,6 +116,71 @@ def get_scene_graph(
         }
 
     return scene_state
+
+
+def find_objects(
+    name_query: str | None = None,
+    exact_name: bool = False,
+    include_types: list[str] | None = None,
+    round_digits: int = 3,
+    limit: int = 20,
+) -> list[dict[str, object]]:
+    """按名称与类型过滤场景对象，返回匹配结果列表。"""
+    try:
+        payload = FindObjectsInput.model_validate(
+            {
+                "name_query": name_query,
+                "exact_name": exact_name,
+                "include_types": include_types if include_types is not None else ["shape", "dummy"],
+                "round_digits": round_digits,
+                "limit": limit,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    handles = sim.getObjectsInTree(sim.handle_scene)
+    query = payload.name_query.lower() if payload.name_query is not None else None
+
+    allowed_types: set[int] = set()
+    for t in payload.include_types:
+        attr = _OBJECT_TYPE_ATTRS[t.value]
+        if hasattr(sim, attr):
+            allowed_types.add(int(getattr(sim, attr)))
+
+    matched: list[dict[str, object]] = []
+    for handle in handles:
+        obj_type = _get_object_type(sim, handle)
+        if allowed_types and obj_type not in allowed_types:
+            continue
+
+        name = _safe_get_object_name(sim, handle)
+        if query is not None:
+            name_lower = name.lower()
+            if payload.exact_name:
+                if name_lower != query:
+                    continue
+            elif query not in name_lower:
+                continue
+
+        position = [round(float(v), payload.round_digits) for v in sim.getObjectPosition(handle, -1)]
+        orientation_rad = sim.getObjectOrientation(handle, -1)
+        orientation_deg = [round(math.degrees(float(v)), payload.round_digits) for v in orientation_rad]
+
+        matched.append(
+            {
+                "name": name,
+                "handle": int(handle),
+                "type": obj_type,
+                "position": position,
+                "orientation_deg": orientation_deg,
+            }
+        )
+        if len(matched) >= payload.limit:
+            break
+
+    return matched
 
 
 def check_collision(entity1: int, entity2: int) -> bool:

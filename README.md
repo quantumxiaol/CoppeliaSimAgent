@@ -188,10 +188,16 @@ CLI 会展示：
 如果存在与地面碰撞，先做碰撞检查再移动它。
 ```
 
+```text
+在场景中找到名字包含 lid 的物体，复制一个并移动到 [0.25, 0.0, 0.35]。
+```
+
 预期工具调用路径（示例）：
 
 - `spawn_primitive` 或 `spawn_cuboid`
+- `find_objects`
 - `get_scene_graph`
+- `duplicate_object`
 - `set_object_pose`
 - （可选）`check_collision`
 
@@ -206,6 +212,8 @@ uv run test/live_tool_move_red_cuboid.py --handle 32 --target 0.2,0.0,0.3
 uv run test/live_tool_remove_red_cuboid.py
 uv run test/live_tool_remove_red_cuboid.py --handle 25
 uv run test/live_tool_scene_graph.py --max-items 10
+uv run test/live_tool_find_objects.py --name lid
+uv run test/live_tool_duplicate_object.py --name lid --offset 0.15,0.0,0.0
 uv run test/live_tool_check_collision.py
 uv run test/live_tool_set_parent_child.py
 ```
@@ -222,6 +230,7 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 - `tests/test_*.py` 用于离线单元测试，`test/live_tool_*.py` 用于在线真实仿真测试。
 - `test/live_tool_move_red_cuboid.py --handle <id>` 可移动指定句柄到 `--target`。
 - `test/live_tool_remove_red_cuboid.py --handle <id>` 会删除指定句柄；如果目标是系统对象或无效句柄，会返回 `found invalid handles`。
+- `test/live_tool_duplicate_object.py` 支持 `--handle` 或 `--name` 两种源对象选择方式。
 
 ## 坐标约定
 
@@ -234,6 +243,7 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 ### 场景感知
 
 - `get_scene_graph(include_types, round_digits)`
+- `find_objects(name_query, exact_name, include_types, round_digits, limit)`
 - `check_collision(entity1, entity2)`
 
 ### 基础几何体
@@ -242,6 +252,7 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 - `spawn_cuboid(size, position, color, dynamic, relative_to)`
 - `set_object_pose(handle, position, orientation_deg, relative_to)`
 - `remove_object(handle)`
+- `duplicate_object(handle, position, offset, relative_to)`
 
 ### 模型与装配
 
