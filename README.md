@@ -8,6 +8,13 @@
 
 ![CoppeliaSimAgent test result](pngs/pngs2.png)
 
+
+下面的截图是使用agent修改`rlbench`中`close_jar`任务场景，需求是加入一个新的蓝色瓶盖作为干扰。agent使用自然语言对话，修改任务场景。
+
+![CoppeliaSimAgent](pngs/pngs3.png)
+
+![CoppeliaSimAgent](pngs/pngs4.png)
+
 ## Reference
 
 [apiFunctions](https://manual.coppeliarobotics.com/en/apiFunctions.htm)
