@@ -9,9 +9,12 @@ from pydantic import ValidationError
 from ..core.connection import get_sim
 from ..core.exceptions import ToolValidationError
 from .schemas import (
+    ColorComponent,
     DuplicateObjectInput,
     PrimitiveType,
+    RenameObjectInput,
     RemoveObjectInput,
+    SetObjectColorInput,
     SetObjectPoseInput,
     SpawnCuboidInput,
     SpawnPrimitiveInput,
@@ -244,3 +247,110 @@ def duplicate_object(
         sim.setObjectPosition(new_handle, payload.relative_to, target)
 
     return int(new_handle)
+
+
+def rename_object(handle: int, new_alias: str) -> str:
+    """重命名对象别名（Alias）。
+
+    优先使用 `setObjectAlias`，若 API 不可用则回退到 `setObjectName`。
+    """
+    try:
+        payload = RenameObjectInput.model_validate({"handle": handle, "new_alias": new_alias})
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    if hasattr(sim, "setObjectAlias"):
+        sim.setObjectAlias(payload.handle, payload.new_alias)
+    elif hasattr(sim, "setObjectName"):
+        sim.setObjectName(payload.handle, payload.new_alias)
+    else:
+        raise RuntimeError("Current CoppeliaSim API does not expose setObjectAlias/setObjectName")
+
+    return payload.new_alias
+
+
+_COLOR_COMPONENT_ATTRS: dict[ColorComponent, str] = {
+    ColorComponent.AMBIENT_DIFFUSE: "colorcomponent_ambient_diffuse",
+    ColorComponent.DIFFUSE: "colorcomponent_diffuse",
+    ColorComponent.SPECULAR: "colorcomponent_specular",
+    ColorComponent.EMISSION: "colorcomponent_emission",
+    ColorComponent.TRANSPARENCY: "colorcomponent_transparency",
+}
+
+
+def _get_object_type(sim: object, handle: int) -> int:
+    if hasattr(sim, "getObjectType"):
+        try:
+            return int(sim.getObjectType(handle))
+        except Exception:
+            pass
+
+    if hasattr(sim, "objintparam_type"):
+        return int(sim.getObjectInt32Param(handle, sim.objintparam_type))
+
+    if hasattr(sim, "objintparam_object_type"):
+        return int(sim.getObjectInt32Param(handle, sim.objintparam_object_type))
+
+    raise RuntimeError("Cannot resolve object type from current CoppeliaSim API")
+
+
+def _resolve_shape_targets(sim: object, handle: int) -> list[int]:
+    if not hasattr(sim, "object_shape_type"):
+        raise RuntimeError("CoppeliaSim API constant missing: object_shape_type")
+
+    shape_type = int(getattr(sim, "object_shape_type"))
+    if _get_object_type(sim, handle) == shape_type:
+        return [int(handle)]
+
+    if hasattr(sim, "getObjectsInTree"):
+        tree_handles = sim.getObjectsInTree(int(handle))
+        targets = [int(h) for h in tree_handles if _get_object_type(sim, int(h)) == shape_type]
+        if targets:
+            return targets
+
+    raise RuntimeError("target object is not a shape and has no descendant shape")
+
+
+def set_object_color(
+    handle: int,
+    color: list[float],
+    color_name: str | None = None,
+    color_component: str = ColorComponent.AMBIENT_DIFFUSE.value,
+) -> list[int]:
+    """设置 shape 对象颜色。
+
+    参数:
+        handle: 目标 shape 句柄。
+        color: RGB 颜色，范围 `[0, 1]`。
+        color_name: 颜色通道名，`None` 表示主颜色。
+        color_component: 颜色分量，默认 `ambient_diffuse`。
+
+    返回:
+        原始句柄，便于链式调用。
+    """
+    try:
+        payload = SetObjectColorInput.model_validate(
+            {
+                "handle": handle,
+                "color": color,
+                "color_name": color_name,
+                "color_component": color_component,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    if not hasattr(sim, "setShapeColor"):
+        raise RuntimeError("Current CoppeliaSim API does not expose setShapeColor")
+
+    attr = _COLOR_COMPONENT_ATTRS[payload.color_component]
+    if not hasattr(sim, attr):
+        raise RuntimeError(f"CoppeliaSim API constant missing: {attr}")
+
+    component = getattr(sim, attr)
+    target_handles = _resolve_shape_targets(sim, payload.handle)
+    for target_handle in target_handles:
+        sim.setShapeColor(target_handle, payload.color_name, component, payload.color)
+    return target_handles

@@ -22,6 +22,8 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("setup_ik_link", names)
         self.assertIn("find_objects", names)
         self.assertIn("duplicate_object", names)
+        self.assertIn("rename_object", names)
+        self.assertIn("set_object_color", names)
 
     def test_unknown_tool_raises(self) -> None:
         with self.assertRaises(KeyError):

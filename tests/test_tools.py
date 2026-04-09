@@ -20,6 +20,10 @@ class FakeSim:
     primitiveshape_sphere = 1
     primitiveshape_cylinder = 2
     colorcomponent_ambient_diffuse = 10
+    colorcomponent_diffuse = 11
+    colorcomponent_specular = 12
+    colorcomponent_emission = 13
+    colorcomponent_transparency = 14
     shapeintparam_static = 20
     shapeintparam_respondable = 21
 
@@ -35,19 +39,39 @@ class FakeSim:
     def __init__(self) -> None:
         self.next_handle = 100
         self.calls: list[tuple[str, tuple]] = []
-        self.object_types = {1: self.object_shape_type, 2: self.object_dummy_type, 3: self.object_joint_type}
-        self.object_names = {1: "shape_a", 2: "dummy_a", 3: "joint_a"}
+        self.object_types = {
+            1: self.object_shape_type,
+            2: self.object_dummy_type,
+            3: self.object_joint_type,
+            4: self.object_dummy_type,
+            5: self.object_shape_type,
+        }
+        self.object_names = {
+            1: "shape_a",
+            2: "dummy_a",
+            3: "joint_a",
+            4: "model_base",
+            5: "model_shape",
+        }
         self.object_positions = {
             1: [0.123456, 1.0, 2.0],
             2: [0.0, 0.0, 0.2],
             3: [5.0, 5.0, 5.0],
+            4: [0.2, 0.2, 0.2],
+            5: [0.2, 0.2, 0.2],
         }
         self.object_orientations = {
             1: [0.0, math.pi / 2, 0.0],
             2: [0.1, 0.2, 0.3],
             3: [0.0, 0.0, 0.0],
+            4: [0.0, 0.0, 0.0],
+            5: [0.0, 0.0, 0.0],
         }
         self.collision_map = {(1, 2): 1, (1, 3): 0}
+        self.subtree_map = {
+            self.handle_scene: [1, 2, 3, 4, 5],
+            4: [4, 5],
+        }
 
     def createPrimitiveShape(self, primitive: int, size: list[float]) -> int:  # noqa: N802
         handle = self.next_handle
@@ -101,13 +125,17 @@ class FakeSim:
 
     def getObjectsInTree(self, root: int) -> list[int]:  # noqa: N802
         self.calls.append(("getObjectsInTree", (root,)))
-        return sorted(self.object_names.keys())
+        return list(self.subtree_map.get(root, [root] if root in self.object_names else sorted(self.object_names)))
 
     def getObjectInt32Param(self, handle: int, param: int) -> int:  # noqa: N802
         return self.object_types[handle]
 
     def getObjectName(self, handle: int) -> str:  # noqa: N802
         return self.object_names[handle]
+
+    def setObjectAlias(self, handle: int, alias: str) -> None:  # noqa: N802
+        self.calls.append(("setObjectAlias", (handle, alias)))
+        self.object_names[handle] = alias
 
     def getObjectPosition(self, handle: int, relative_to: int) -> list[float]:  # noqa: N802
         return self.object_positions[handle]
@@ -221,7 +249,7 @@ class TestTools(unittest.TestCase):
     def test_find_objects_by_name(self) -> None:
         sim = FakeSim()
         with patch("coppeliasimagent.tools.scene.get_sim", return_value=sim):
-            items = scene.find_objects(name_query="shape", include_types=["shape"], exact_name=False, limit=10)
+            items = scene.find_objects(name_query="shape_a", include_types=["shape"], exact_name=True, limit=10)
 
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["name"], "shape_a")
@@ -239,6 +267,39 @@ class TestTools(unittest.TestCase):
     def test_duplicate_object_rejects_both_position_and_offset(self) -> None:
         with self.assertRaises(ToolValidationError):
             primitives.duplicate_object(handle=1, position=[0.0, 0.0, 0.0], offset=[0.1, 0.0, 0.0])
+
+    def test_rename_object(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.primitives.get_sim", return_value=sim):
+            alias = primitives.rename_object(handle=1, new_alias="jar_lid_copy")
+
+        self.assertEqual(alias, "jar_lid_copy")
+        self.assertIn(("setObjectAlias", (1, "jar_lid_copy")), sim.calls)
+        self.assertEqual(sim.getObjectName(1), "jar_lid_copy")
+
+    def test_set_object_color(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.primitives.get_sim", return_value=sim):
+            out = primitives.set_object_color(
+                handle=1,
+                color=[0.1, 0.2, 0.9],
+                color_component="ambient_diffuse",
+            )
+
+        self.assertEqual(out, [1])
+        self.assertIn(("setShapeColor", (1, None, sim.colorcomponent_ambient_diffuse, [0.1, 0.2, 0.9])), sim.calls)
+
+    def test_set_object_color_falls_back_to_descendant_shape(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.primitives.get_sim", return_value=sim):
+            out = primitives.set_object_color(handle=4, color=[0.3, 0.7, 0.1], color_component="ambient_diffuse")
+
+        self.assertEqual(out, [5])
+        self.assertIn(("setShapeColor", (5, None, sim.colorcomponent_ambient_diffuse, [0.3, 0.7, 0.1])), sim.calls)
+
+    def test_rename_object_invalid_alias(self) -> None:
+        with self.assertRaises(ToolValidationError):
+            primitives.rename_object(handle=1, new_alias="   ")
 
     def test_kinematics_functions(self) -> None:
         sim = FakeSim()

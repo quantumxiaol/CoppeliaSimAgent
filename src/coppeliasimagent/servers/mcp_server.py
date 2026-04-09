@@ -9,7 +9,15 @@ from mcp.server.fastmcp import FastMCP
 
 from ..tools.kinematics import actuate_gripper, move_ik_target, setup_ik_link, spawn_waypoint
 from ..tools.models import load_model, set_parent_child
-from ..tools.primitives import duplicate_object, remove_object, set_object_pose, spawn_cuboid, spawn_primitive
+from ..tools.primitives import (
+    duplicate_object,
+    remove_object,
+    rename_object,
+    set_object_color,
+    set_object_pose,
+    spawn_cuboid,
+    spawn_primitive,
+)
 from ..tools.scene import check_collision, find_objects, get_scene_graph
 
 
@@ -129,7 +137,34 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             offset=offset,
             relative_to=relative_to,
         )
-        return {"handle": out_handle}
+        return {"source_handle": handle, "new_handle": out_handle, "handle": out_handle}
+
+    @mcp.tool(name="rename_object", description="Rename one object alias by handle.")
+    def rename_object_tool(handle: int, new_alias: str) -> dict[str, Any]:
+        alias = rename_object(handle=handle, new_alias=new_alias)
+        return {"handle": handle, "new_alias": alias}
+
+    @mcp.tool(name="set_object_color", description="Set one shape object color by handle.")
+    def set_object_color_tool(
+        handle: int,
+        color: list[float],
+        color_name: str | None = None,
+        color_component: str = "ambient_diffuse",
+    ) -> dict[str, Any]:
+        out_handles = set_object_color(
+            handle=handle,
+            color=color,
+            color_name=color_name,
+            color_component=color_component,
+        )
+        return {
+            "target_handle": handle,
+            "applied_handles": out_handles,
+            "handle": out_handles[0] if out_handles else handle,
+            "color": color,
+            "color_name": color_name,
+            "color_component": color_component,
+        }
 
     @mcp.tool(name="load_model", description="Load a .ttm model and place it.")
     def load_model_tool(

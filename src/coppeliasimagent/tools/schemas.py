@@ -21,6 +21,14 @@ class PrimitiveType(str, Enum):
     CYLINDER = "cylinder"
 
 
+class ColorComponent(str, Enum):
+    AMBIENT_DIFFUSE = "ambient_diffuse"
+    DIFFUSE = "diffuse"
+    SPECULAR = "specular"
+    EMISSION = "emission"
+    TRANSPARENCY = "transparency"
+
+
 class SceneObjectType(str, Enum):
     SHAPE = "shape"
     DUMMY = "dummy"
@@ -154,6 +162,39 @@ class DuplicateObjectInput(ToolInputModel):
         if self.position is not None and self.offset is not None:
             raise ValueError("position and offset cannot both be provided")
         return self
+
+
+class RenameObjectInput(ToolInputModel):
+    handle: int
+    new_alias: str = Field(min_length=1)
+
+    @field_validator("new_alias")
+    @classmethod
+    def validate_new_alias(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("new_alias cannot be blank")
+        return text
+
+
+class SetObjectColorInput(ToolInputModel):
+    handle: int
+    color: list[float] = Field(min_length=3, max_length=3)
+    color_name: str | None = None
+    color_component: ColorComponent = ColorComponent.AMBIENT_DIFFUSE
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: list[float]) -> list[float]:
+        return _validate_color(value, field_name="color")
+
+    @field_validator("color_name")
+    @classmethod
+    def validate_color_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text if text else None
 
 
 class RemoveObjectInput(ToolInputModel):

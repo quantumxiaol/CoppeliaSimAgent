@@ -192,12 +192,18 @@ CLI 会展示：
 在场景中找到名字包含 lid 的物体，复制一个并移动到 [0.25, 0.0, 0.35]。
 ```
 
+```text
+把刚复制出来的 lid 改名为 jar_lid_copy，并把颜色改成蓝色（RGB=[0.2,0.4,1.0]）。
+```
+
 预期工具调用路径（示例）：
 
 - `spawn_primitive` 或 `spawn_cuboid`
 - `find_objects`
 - `get_scene_graph`
 - `duplicate_object`
+- `rename_object`
+- `set_object_color`
 - `set_object_pose`
 - （可选）`check_collision`
 
@@ -214,6 +220,8 @@ uv run test/live_tool_remove_red_cuboid.py --handle 25
 uv run test/live_tool_scene_graph.py --max-items 10
 uv run test/live_tool_find_objects.py --name lid
 uv run test/live_tool_duplicate_object.py --name lid --offset 0.15,0.0,0.0
+uv run test/live_tool_rename_object.py --name lid --new-alias jar_lid_copy
+uv run test/live_tool_set_object_color.py --name lid --color 0.2,0.4,1.0
 uv run test/live_tool_check_collision.py
 uv run test/live_tool_set_parent_child.py
 ```
@@ -231,6 +239,8 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 - `test/live_tool_move_red_cuboid.py --handle <id>` 可移动指定句柄到 `--target`。
 - `test/live_tool_remove_red_cuboid.py --handle <id>` 会删除指定句柄；如果目标是系统对象或无效句柄，会返回 `found invalid handles`。
 - `test/live_tool_duplicate_object.py` 支持 `--handle` 或 `--name` 两种源对象选择方式。
+- `test/live_tool_rename_object.py` 支持按 `--handle` 或 `--name` 重命名对象。
+- `test/live_tool_set_object_color.py` 支持按 `--handle` 或 `--name` 修改 shape 颜色。
 
 ## 坐标约定
 
@@ -253,6 +263,9 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 - `set_object_pose(handle, position, orientation_deg, relative_to)`
 - `remove_object(handle)`
 - `duplicate_object(handle, position, offset, relative_to)`
+- `rename_object(handle, new_alias)`
+- `set_object_color(handle, color, color_name, color_component)`
+  - 支持传入 shape 句柄，或传入模型/父节点句柄（会自动向下查找 shape 后着色）
 
 ### 模型与装配
 

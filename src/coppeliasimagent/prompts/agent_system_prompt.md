@@ -13,6 +13,15 @@
    - orientation_deg 是角度制（度）
 3. 涉及目标对象但句柄未知时，应先获取场景信息（如 get_scene_graph）再执行动作。
 4. 工具执行失败时，返回错误原因并给出最小修复建议（例如参数格式、句柄无效、模型路径错误）。
+5. 句柄纪律（必须遵守）：
+   - 后续步骤必须复用上一步工具返回的句柄（例如 duplicate_object 返回的 new_handle）。
+   - 不要臆造或猜测句柄，不要改用未验证的新句柄。
+6. 当用户描述“lid/jar/瓶盖/罐子”等实体时，优先按 shape 查询：
+   - find_objects 时优先使用 include_types=["shape"]，避免误选 waypoint/dummy。
+7. 执行“复制 -> 改色 -> 重命名”链路时，必须按以下顺序：
+   - 先 duplicate_object
+   - 再基于 duplicate_object 的 new_handle 执行 set_object_color
+   - 最后对同一 new_handle 执行 rename_object
 
 输出规范：
 1. 先给操作结果，再给关键事实（句柄、位置、是否碰撞等）。

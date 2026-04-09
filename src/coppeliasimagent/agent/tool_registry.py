@@ -9,7 +9,15 @@ from pydantic import BaseModel
 
 from ..tools.kinematics import actuate_gripper, move_ik_target, setup_ik_link, spawn_waypoint
 from ..tools.models import load_model, set_parent_child
-from ..tools.primitives import duplicate_object, remove_object, set_object_pose, spawn_cuboid, spawn_primitive
+from ..tools.primitives import (
+    duplicate_object,
+    remove_object,
+    rename_object,
+    set_object_color,
+    set_object_pose,
+    spawn_cuboid,
+    spawn_primitive,
+)
 from ..tools.scene import check_collision, find_objects, get_scene_graph
 from ..tools.schemas import (
     ActuateGripperInput,
@@ -19,7 +27,9 @@ from ..tools.schemas import (
     GetSceneGraphInput,
     LoadModelInput,
     MoveIKTargetInput,
+    RenameObjectInput,
     RemoveObjectInput,
+    SetObjectColorInput,
     SetObjectPoseInput,
     SetParentChildInput,
     SetupIKLinkInput,
@@ -101,6 +111,18 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Duplicate one object by handle with optional reposition/offset.",
         input_model=DuplicateObjectInput,
         handler=duplicate_object,
+    ),
+    "rename_object": ToolDefinition(
+        name="rename_object",
+        description="Rename one object alias by handle.",
+        input_model=RenameObjectInput,
+        handler=rename_object,
+    ),
+    "set_object_color": ToolDefinition(
+        name="set_object_color",
+        description="Set one shape object's color by handle.",
+        input_model=SetObjectColorInput,
+        handler=set_object_color,
     ),
     "load_model": ToolDefinition(
         name="load_model",
