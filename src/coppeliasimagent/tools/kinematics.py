@@ -9,14 +9,43 @@ from ..core.exceptions import ToolValidationError
 from .schemas import (
     ActuateGripperInput,
     ActuateYouBotGripperInput,
+    DriveYouBotBaseInput,
     GetJointPositionInput,
     MoveIKTargetInput,
     SetJointPositionInput,
     SetJointTargetPositionInput,
     SetJointTargetVelocityInput,
+    SetYouBotBaseLockedInput,
+    SetYouBotWheelVelocitiesInput,
     SetupIKLinkInput,
     SetupYouBotArmIKInput,
     SpawnWaypointInput,
+)
+
+_YOUBOT_WHEEL_JOINT_NAMES = (
+    "rollingJoint_rr",
+    "rollingJoint_rl",
+    "rollingJoint_fr",
+    "rollingJoint_fl",
+)
+
+_YOUBOT_BASE_SHAPE_NAMES = (
+    "ME_Platfo2_sub1",
+    "Rectangle0",
+    "Rectangle",
+    "Rectangle13",
+    "intermediateLink_rr",
+    "intermediateLink_rl",
+    "intermediateLink_fr",
+    "intermediateLink_fl",
+    "swedishWheel_rr",
+    "swedishWheel_rl",
+    "swedishWheel_fr",
+    "swedishWheel_fl",
+    "wheel_respondable_rr",
+    "wheel_respondable_rl",
+    "wheel_respondable_fr",
+    "wheel_respondable_fl",
 )
 
 
@@ -68,6 +97,38 @@ def _set_object_alias(sim: object, handle: int, alias: str) -> None:
         sim.setObjectName(handle, alias)
         return
     raise RuntimeError("Current CoppeliaSim API does not expose setObjectAlias/setObjectName")
+
+
+def _normalize_child_path(robot_path: str, object_path: str) -> str:
+    return object_path if object_path.startswith("/") else f"{robot_path}/{object_path}"
+
+
+def _resolve_existing_handles(sim: object, object_paths: list[str]) -> tuple[list[int], list[str]]:
+    handles: list[int] = []
+    missing: list[str] = []
+    for object_path in object_paths:
+        handle = _resolve_object_handle(sim, object_path, no_error=True)
+        if handle == -1:
+            missing.append(object_path)
+            continue
+        handles.append(handle)
+    return handles, missing
+
+
+def _reset_dynamic_object(sim: object, handle: int, *, include_model: bool = True) -> int:
+    object_handle = int(handle)
+    if include_model and hasattr(sim, "handleflag_model"):
+        object_handle |= int(getattr(sim, "handleflag_model"))
+    if hasattr(sim, "resetDynamicObject"):
+        return int(sim.resetDynamicObject(object_handle))
+    return 0
+
+
+def _youbot_wheel_handles(sim: object, robot_path: str) -> list[int]:
+    return [
+        _resolve_object_handle(sim, f"{robot_path}/{joint_name}")
+        for joint_name in _YOUBOT_WHEEL_JOINT_NAMES
+    ]
 
 
 def _ensure_dummy(
@@ -285,6 +346,92 @@ def set_joint_target_velocity(
     return float(payload.target_velocity)
 
 
+def set_youbot_wheel_velocities(
+    robot_path: str = "/youBot",
+    wheel_velocities: list[float] | None = None,
+    motion_params: list[float] | None = None,
+) -> dict[str, object]:
+    """直接设置 youBot 四个 rolling joints 的目标速度。
+
+    轮子顺序固定为: rr, rl, fr, fl。
+    """
+    try:
+        payload = SetYouBotWheelVelocitiesInput.model_validate(
+            {
+                "robot_path": robot_path,
+                "wheel_velocities": wheel_velocities if wheel_velocities is not None else [0.0, 0.0, 0.0, 0.0],
+                "motion_params": motion_params,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    wheel_handles = _youbot_wheel_handles(sim, payload.robot_path)
+    for handle, velocity in zip(wheel_handles, payload.wheel_velocities, strict=True):
+        set_joint_target_velocity(handle, float(velocity), motion_params=payload.motion_params)
+
+    return {
+        "robot_path": payload.robot_path,
+        "wheel_joint_handles": wheel_handles,
+        "wheel_joint_names": list(_YOUBOT_WHEEL_JOINT_NAMES),
+        "wheel_velocities": [float(v) for v in payload.wheel_velocities],
+    }
+
+
+def drive_youbot_base(
+    robot_path: str = "/youBot",
+    forward_velocity: float = 0.0,
+    lateral_velocity: float = 0.0,
+    yaw_velocity: float = 0.0,
+    motion_params: list[float] | None = None,
+) -> dict[str, object]:
+    """按 youBot 全向底盘约定把底盘指令映射到四个轮子的目标速度。
+
+    输出轮子顺序为 rr, rl, fr, fl。
+    """
+    try:
+        payload = DriveYouBotBaseInput.model_validate(
+            {
+                "robot_path": robot_path,
+                "forward_velocity": forward_velocity,
+                "lateral_velocity": lateral_velocity,
+                "yaw_velocity": yaw_velocity,
+                "motion_params": motion_params,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    rr = -payload.forward_velocity - payload.lateral_velocity + payload.yaw_velocity
+    rl = -payload.forward_velocity + payload.lateral_velocity - payload.yaw_velocity
+    fr = -payload.forward_velocity + payload.lateral_velocity + payload.yaw_velocity
+    fl = -payload.forward_velocity - payload.lateral_velocity - payload.yaw_velocity
+
+    out = set_youbot_wheel_velocities(
+        robot_path=payload.robot_path,
+        wheel_velocities=[rr, rl, fr, fl],
+        motion_params=payload.motion_params,
+    )
+    out.update(
+        {
+            "forward_velocity": float(payload.forward_velocity),
+            "lateral_velocity": float(payload.lateral_velocity),
+            "yaw_velocity": float(payload.yaw_velocity),
+        }
+    )
+    return out
+
+
+def stop_youbot_base(robot_path: str = "/youBot", motion_params: list[float] | None = None) -> dict[str, object]:
+    """显式把 youBot 四个底盘轮子的目标速度设为 0。"""
+    return set_youbot_wheel_velocities(
+        robot_path=robot_path,
+        wheel_velocities=[0.0, 0.0, 0.0, 0.0],
+        motion_params=motion_params,
+    )
+
+
 def actuate_gripper(signal_name: str, closed: bool) -> int:
     """通过信号控制夹爪开合。
 
@@ -303,6 +450,67 @@ def actuate_gripper(signal_name: str, closed: bool) -> int:
     signal_value = 1 if payload.closed else 0
     sim.setInt32Signal(payload.signal_name, signal_value)
     return signal_value
+
+
+def set_youbot_base_locked(
+    robot_path: str = "/youBot",
+    locked: bool = True,
+    base_shape_paths: list[str] | None = None,
+    zero_wheels: bool = True,
+    reset_dynamics: bool = True,
+    motion_params: list[float] | None = None,
+) -> dict[str, object]:
+    """切换 youBot 底盘固定模式，便于只测试机械臂动作。"""
+    try:
+        payload = SetYouBotBaseLockedInput.model_validate(
+            {
+                "robot_path": robot_path,
+                "locked": locked,
+                "base_shape_paths": base_shape_paths,
+                "zero_wheels": zero_wheels,
+                "reset_dynamics": reset_dynamics,
+                "motion_params": motion_params,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    robot_handle = _resolve_object_handle(sim, payload.robot_path)
+    if payload.base_shape_paths is None:
+        shape_handles = [
+            int(handle)
+            for handle in sim.getObjectsInTree(robot_handle)
+            if int(sim.getObjectType(handle)) == int(getattr(sim, "object_shape_type"))
+        ]
+        missing_paths: list[str] = []
+    else:
+        shape_paths = [
+            _normalize_child_path(payload.robot_path, item)
+            for item in payload.base_shape_paths
+        ]
+        shape_handles, missing_paths = _resolve_existing_handles(sim, shape_paths)
+
+    if payload.zero_wheels:
+        stop_youbot_base(robot_path=payload.robot_path, motion_params=payload.motion_params)
+
+    static_value = 1 if payload.locked else 0
+    for handle in shape_handles:
+        sim.setObjectInt32Param(handle, sim.shapeintparam_static, static_value)
+
+    reset_result = None
+    if payload.reset_dynamics:
+        reset_result = _reset_dynamic_object(sim, robot_handle, include_model=True)
+
+    return {
+        "robot_path": payload.robot_path,
+        "robot_handle": robot_handle,
+        "locked": payload.locked,
+        "zero_wheels": payload.zero_wheels,
+        "modified_shape_handles": shape_handles,
+        "missing_shape_paths": missing_paths,
+        "reset_result": reset_result,
+    }
 
 
 def setup_youbot_arm_ik(

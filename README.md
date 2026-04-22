@@ -298,6 +298,10 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 - `set_joint_position(handle, position)`
 - `set_joint_target_position(handle, target_position, motion_params)`
 - `set_joint_target_velocity(handle, target_velocity, motion_params)`
+- `set_youbot_wheel_velocities(robot_path, wheel_velocities, motion_params)`
+- `drive_youbot_base(robot_path, forward_velocity, lateral_velocity, yaw_velocity, motion_params)`
+- `stop_youbot_base(robot_path, motion_params)`
+- `set_youbot_base_locked(robot_path, locked, base_shape_paths, zero_wheels, reset_dynamics, motion_params)`
 - `setup_ik_link(base_handle, tip_handle, target_handle, constraints_mask)`
 - `setup_youbot_arm_ik(robot_path, base_path, tip_parent_path, tip_dummy_name, target_dummy_name, tip_offset, target_offset, constraints_mask, reuse_existing)`
 - `move_ik_target(environment_handle, group_handle, target_handle, position, relative_to, steps)`
@@ -307,10 +311,14 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 ## youBot 控制说明
 
 - 现在已经支持直接控制单个 joint 的当前位置、目标位置和目标速度。
+- 现在已经支持 youBot 底盘四个轮子的目标速度控制，以及按前进/横移/旋转命令映射到底盘轮速。
 - `setup_youbot_arm_ik` 会自动为 `/youBot` 创建或复用 `youBotArmTip` 与 `youBotArmTarget` 两个 dummy，并直接返回 IK 环境与 group 句柄。
 - `actuate_youbot_gripper` 默认按当前 `KUKA YouBot.ttm` 的两指关节范围做开合适配：
   - 打开：`joint1=0.025`，`joint2=-0.05`
   - 闭合：`joint1=0.0`，`joint2=0.0`
+- `set_youbot_base_locked(locked=True)` 默认会把 `/youBot` 模型下全部 shape 切为 static，并重置动力学。
+  - 这个模式适合先验证“机械臂是否能接触/推动目标”。
+  - 在该模式下，优先用 `set_joint_position` 做机械臂姿态测试；`set_joint_target_position` 不一定会继续驱动。
 - 这些实现基于 CoppeliaSim Regular API 的 `sim.getObject`、`sim.getJointPosition`、`sim.setJointPosition`、`sim.setJointTargetPosition`、`sim.setJointTargetVelocity`，以及 ZMQ Remote API 暴露的同名 `sim.*` 调用。
 
 ## Pydantic 校验约定

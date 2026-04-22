@@ -10,11 +10,15 @@ from mcp.server.fastmcp import FastMCP
 from ..tools.kinematics import (
     actuate_gripper,
     actuate_youbot_gripper,
+    drive_youbot_base,
     get_joint_position,
     move_ik_target,
     set_joint_position,
     set_joint_target_position,
     set_joint_target_velocity,
+    set_youbot_base_locked,
+    set_youbot_wheel_velocities,
+    stop_youbot_base,
     setup_ik_link,
     setup_youbot_arm_ik,
     spawn_waypoint,
@@ -246,6 +250,59 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             motion_params=motion_params,
         )
         return {"handle": handle, "target_velocity": applied}
+
+    @mcp.tool(name="set_youbot_wheel_velocities", description="Set the four youBot wheel joint target velocities explicitly.")
+    def set_youbot_wheel_velocities_tool(
+        robot_path: str = "/youBot",
+        wheel_velocities: list[float] | None = None,
+        motion_params: list[float] | None = None,
+    ) -> dict[str, Any]:
+        return set_youbot_wheel_velocities(
+            robot_path=robot_path,
+            wheel_velocities=wheel_velocities,
+            motion_params=motion_params,
+        )
+
+    @mcp.tool(name="drive_youbot_base", description="Map youBot forward/lateral/yaw commands to wheel target velocities.")
+    def drive_youbot_base_tool(
+        robot_path: str = "/youBot",
+        forward_velocity: float = 0.0,
+        lateral_velocity: float = 0.0,
+        yaw_velocity: float = 0.0,
+        motion_params: list[float] | None = None,
+    ) -> dict[str, Any]:
+        return drive_youbot_base(
+            robot_path=robot_path,
+            forward_velocity=forward_velocity,
+            lateral_velocity=lateral_velocity,
+            yaw_velocity=yaw_velocity,
+            motion_params=motion_params,
+        )
+
+    @mcp.tool(name="stop_youbot_base", description="Zero all four youBot wheel joint target velocities.")
+    def stop_youbot_base_tool(
+        robot_path: str = "/youBot",
+        motion_params: list[float] | None = None,
+    ) -> dict[str, Any]:
+        return stop_youbot_base(robot_path=robot_path, motion_params=motion_params)
+
+    @mcp.tool(name="set_youbot_base_locked", description="Toggle a fixed-base mode for the youBot platform and wheels.")
+    def set_youbot_base_locked_tool(
+        robot_path: str = "/youBot",
+        locked: bool = True,
+        base_shape_paths: list[str] | None = None,
+        zero_wheels: bool = True,
+        reset_dynamics: bool = True,
+        motion_params: list[float] | None = None,
+    ) -> dict[str, Any]:
+        return set_youbot_base_locked(
+            robot_path=robot_path,
+            locked=locked,
+            base_shape_paths=base_shape_paths,
+            zero_wheels=zero_wheels,
+            reset_dynamics=reset_dynamics,
+            motion_params=motion_params,
+        )
 
     @mcp.tool(name="setup_ik_link", description="Set up IK chain base-tip-target.")
     def setup_ik_link_tool(

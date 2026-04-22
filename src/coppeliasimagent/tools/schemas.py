@@ -459,6 +459,112 @@ class ActuateYouBotGripperInput(ToolInputModel):
         return _validate_float_list(value, field_name="motion_params", max_length=3)
 
 
+class SetYouBotWheelVelocitiesInput(ToolInputModel):
+    robot_path: str = Field(default="/youBot", min_length=1)
+    wheel_velocities: list[float] = Field(min_length=4, max_length=4)
+    motion_params: list[float] | None = None
+
+    @field_validator("robot_path")
+    @classmethod
+    def validate_robot_path(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("robot_path cannot be empty")
+        return value
+
+    @field_validator("wheel_velocities")
+    @classmethod
+    def validate_wheel_velocities(cls, value: list[float]) -> list[float]:
+        return _validate_float_list(value, field_name="wheel_velocities", min_length=4, max_length=4) or []
+
+    @field_validator("motion_params")
+    @classmethod
+    def validate_motion_params(cls, value: list[float] | None) -> list[float] | None:
+        return _validate_float_list(value, field_name="motion_params", max_length=2)
+
+
+class DriveYouBotBaseInput(ToolInputModel):
+    robot_path: str = Field(default="/youBot", min_length=1)
+    forward_velocity: float = 0.0
+    lateral_velocity: float = 0.0
+    yaw_velocity: float = 0.0
+    motion_params: list[float] | None = None
+
+    @field_validator("robot_path")
+    @classmethod
+    def validate_robot_path(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("robot_path cannot be empty")
+        return value
+
+    @field_validator("forward_velocity", "lateral_velocity", "yaw_velocity")
+    @classmethod
+    def validate_velocity_scalar(cls, value: float) -> float:
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("velocity commands must be finite")
+        return value
+
+    @field_validator("motion_params")
+    @classmethod
+    def validate_motion_params(cls, value: list[float] | None) -> list[float] | None:
+        return _validate_float_list(value, field_name="motion_params", max_length=2)
+
+
+class StopYouBotBaseInput(ToolInputModel):
+    robot_path: str = Field(default="/youBot", min_length=1)
+    motion_params: list[float] | None = None
+
+    @field_validator("robot_path")
+    @classmethod
+    def validate_robot_path(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("robot_path cannot be empty")
+        return value
+
+    @field_validator("motion_params")
+    @classmethod
+    def validate_motion_params(cls, value: list[float] | None) -> list[float] | None:
+        return _validate_float_list(value, field_name="motion_params", max_length=2)
+
+
+class SetYouBotBaseLockedInput(ToolInputModel):
+    robot_path: str = Field(default="/youBot", min_length=1)
+    locked: bool
+    base_shape_paths: list[str] | None = None
+    zero_wheels: bool = True
+    reset_dynamics: bool = True
+    motion_params: list[float] | None = None
+
+    @field_validator("robot_path")
+    @classmethod
+    def validate_robot_path(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("robot_path cannot be empty")
+        return value
+
+    @field_validator("base_shape_paths")
+    @classmethod
+    def validate_base_shape_paths(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        out: list[str] = []
+        for item in value:
+            text = item.strip()
+            if not text:
+                raise ValueError("base_shape_paths cannot contain blank entries")
+            out.append(text)
+        return out
+
+    @field_validator("motion_params")
+    @classmethod
+    def validate_motion_params(cls, value: list[float] | None) -> list[float] | None:
+        return _validate_float_list(value, field_name="motion_params", max_length=2)
+
+
 def as_payload(model: ToolInputModel) -> dict[str, Any]:
     """Convert model to JSON-compatible payload for tool dispatching."""
     return model.model_dump(mode="json")

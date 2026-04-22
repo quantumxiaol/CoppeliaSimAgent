@@ -26,6 +26,7 @@ class FakeSim:
     colorcomponent_transparency = 14
     shapeintparam_static = 20
     shapeintparam_respondable = 21
+    handleflag_model = 0x040000
 
     handle_scene = -2
     objintparam_type = 4000
@@ -50,6 +51,12 @@ class FakeSim:
             12: self.object_shape_type,
             13: self.object_joint_type,
             14: self.object_joint_type,
+            15: self.object_joint_type,
+            16: self.object_joint_type,
+            17: self.object_joint_type,
+            18: self.object_joint_type,
+            19: self.object_shape_type,
+            20: self.object_shape_type,
         }
         self.object_names = {
             1: "shape_a",
@@ -62,6 +69,12 @@ class FakeSim:
             12: "Rectangle7",
             13: "youBotGripperJoint1",
             14: "youBotGripperJoint2",
+            15: "rollingJoint_rr",
+            16: "rollingJoint_rl",
+            17: "rollingJoint_fr",
+            18: "rollingJoint_fl",
+            19: "ME_Platfo2_sub1",
+            20: "wheel_respondable_rr",
         }
         self.object_positions = {
             1: [0.123456, 1.0, 2.0],
@@ -74,6 +87,12 @@ class FakeSim:
             12: [1.1, 0.0, 0.25],
             13: [1.11, 0.03, 0.22],
             14: [1.11, -0.03, 0.22],
+            15: [1.0, 0.15, 0.05],
+            16: [1.0, -0.15, 0.05],
+            17: [1.2, 0.15, 0.05],
+            18: [1.2, -0.15, 0.05],
+            19: [1.0, 0.0, 0.05],
+            20: [1.0, 0.15, 0.05],
         }
         self.object_orientations = {
             1: [0.0, math.pi / 2, 0.0],
@@ -86,6 +105,12 @@ class FakeSim:
             12: [0.0, 0.0, 0.0],
             13: [0.0, 0.0, 0.0],
             14: [0.0, 0.0, 0.0],
+            15: [0.0, 0.0, 0.0],
+            16: [0.0, 0.0, 0.0],
+            17: [0.0, 0.0, 0.0],
+            18: [0.0, 0.0, 0.0],
+            19: [0.0, 0.0, 0.0],
+            20: [0.0, 0.0, 0.0],
         }
         self.object_parents = {
             1: -1,
@@ -98,6 +123,12 @@ class FakeSim:
             12: 11,
             13: 12,
             14: 12,
+            15: 10,
+            16: 10,
+            17: 10,
+            18: 10,
+            19: 10,
+            20: 10,
         }
         self.collision_map = {(1, 2): 1, (1, 3): 0}
         self.joint_positions = {
@@ -105,6 +136,10 @@ class FakeSim:
             11: 0.1,
             13: 0.025,
             14: -0.05,
+            15: 0.0,
+            16: 0.0,
+            17: 0.0,
+            18: 0.0,
         }
         self.joint_target_positions: dict[int, float] = {}
         self.joint_target_velocities: dict[int, float] = {}
@@ -113,8 +148,14 @@ class FakeSim:
             11: (False, [-math.pi, math.pi]),
             13: (False, [0.0, 0.025]),
             14: (False, [-0.05, 0.05]),
+            15: (False, [-10.0, 20.0]),
+            16: (False, [-10.0, 20.0]),
+            17: (False, [-10.0, 20.0]),
+            18: (False, [-10.0, 20.0]),
         }
         self.linked_dummies: dict[int, int] = {}
+        self.object_int_params: dict[tuple[int, int], int] = {}
+        self.reset_dynamic_calls: list[int] = []
 
     def _children_of(self, parent: int) -> list[int]:
         return [handle for handle, value in self.object_parents.items() if value == parent]
@@ -156,6 +197,7 @@ class FakeSim:
 
     def setObjectInt32Param(self, handle: int, param: int, value: int) -> None:  # noqa: N802
         self.calls.append(("setObjectInt32Param", (handle, param, value)))
+        self.object_int_params[(handle, param)] = value
 
     def setObjectOrientation(self, handle: int, relative_to: int, orientation: list[float]) -> None:  # noqa: N802
         self.calls.append(("setObjectOrientation", (handle, relative_to, orientation)))
@@ -204,6 +246,9 @@ class FakeSim:
         return sorted(self.object_names)
 
     def getObjectInt32Param(self, handle: int, param: int) -> int:  # noqa: N802
+        return self.object_types[handle]
+
+    def getObjectType(self, handle: int) -> int:  # noqa: N802
         return self.object_types[handle]
 
     def getObject(self, object_path: str, options: dict | None = None) -> int:  # noqa: N802
@@ -285,6 +330,9 @@ class FakeSim:
         self.calls.append(("setJointTargetVelocity", (handle, target, motion_params)))
         self.joint_target_velocities[handle] = float(target)
 
+    def getJointTargetVelocity(self, handle: int) -> float:  # noqa: N802
+        return self.joint_target_velocities.get(handle, 0.0)
+
     def getJointInterval(self, handle: int) -> tuple[bool, list[float]]:  # noqa: N802
         cyclic, interval = self.joint_intervals[handle]
         return cyclic, list(interval)
@@ -292,6 +340,11 @@ class FakeSim:
     def setLinkDummy(self, dummy_handle: int, linked_dummy_handle: int) -> None:  # noqa: N802
         self.calls.append(("setLinkDummy", (dummy_handle, linked_dummy_handle)))
         self.linked_dummies[dummy_handle] = linked_dummy_handle
+
+    def resetDynamicObject(self, handle: int) -> int:  # noqa: N802
+        self.calls.append(("resetDynamicObject", (handle,)))
+        self.reset_dynamic_calls.append(handle)
+        return 1
 
 
 class FakeSimIK:
@@ -502,6 +555,27 @@ class TestTools(unittest.TestCase):
         self.assertEqual(close_out["joint2_position"], 0.0)
         self.assertEqual(open_out["joint1_target"], 0.025)
         self.assertEqual(open_out["joint2_target"], -0.05)
+
+    def test_youbot_base_drive_and_lock(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.kinematics.get_sim", return_value=sim):
+            drive = kinematics.drive_youbot_base(
+                robot_path="/youBot",
+                forward_velocity=1.0,
+                lateral_velocity=0.2,
+                yaw_velocity=-0.1,
+            )
+            stop = kinematics.stop_youbot_base(robot_path="/youBot")
+            lock = kinematics.set_youbot_base_locked(robot_path="/youBot", locked=True)
+
+        self.assertEqual([round(v, 3) for v in drive["wheel_velocities"]], [-1.3, -0.7, -0.9, -1.1])
+        self.assertEqual(stop["wheel_velocities"], [0.0, 0.0, 0.0, 0.0])
+        self.assertEqual(sim.joint_target_velocities[15], 0.0)
+        self.assertEqual(sim.joint_target_velocities[18], 0.0)
+        self.assertTrue(lock["locked"])
+        self.assertIn(10 | sim.handleflag_model, sim.reset_dynamic_calls)
+        self.assertEqual(sim.object_int_params[(19, sim.shapeintparam_static)], 1)
+        self.assertEqual(sim.object_int_params[(20, sim.shapeintparam_static)], 1)
 
 
 if __name__ == "__main__":

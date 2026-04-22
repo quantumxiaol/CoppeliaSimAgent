@@ -21,6 +21,8 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("get_scene_graph", names)
         self.assertIn("setup_ik_link", names)
         self.assertIn("setup_youbot_arm_ik", names)
+        self.assertIn("drive_youbot_base", names)
+        self.assertIn("set_youbot_base_locked", names)
         self.assertIn("find_objects", names)
         self.assertIn("duplicate_object", names)
         self.assertIn("rename_object", names)
@@ -41,6 +43,7 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("spawn_primitive", names)
         self.assertIn("actuate_gripper", names)
         self.assertIn("actuate_youbot_gripper", names)
+        self.assertIn("stop_youbot_base", names)
 
 
 if __name__ == "__main__":
