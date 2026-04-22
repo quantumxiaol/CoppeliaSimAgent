@@ -15,6 +15,10 @@ class ToolInputModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class EmptyToolInput(ToolInputModel):
+    """Marker schema for tools without parameters."""
+
+
 class PrimitiveType(str, Enum):
     CUBOID = "cuboid"
     SPHERE = "sphere"
@@ -305,6 +309,22 @@ class FindObjectsInput(ToolInputModel):
 class CheckCollisionInput(ToolInputModel):
     entity1: int
     entity2: int
+
+
+class GetSimulationStateInput(EmptyToolInput):
+    pass
+
+
+class StartSimulationInput(EmptyToolInput):
+    pass
+
+
+class PauseSimulationInput(EmptyToolInput):
+    pass
+
+
+class StopSimulationInput(EmptyToolInput):
+    pass
 
 
 class SpawnWaypointInput(ToolInputModel):

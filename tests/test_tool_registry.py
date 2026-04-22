@@ -27,6 +27,10 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("set_joint_dyn_ctrl_mode", names)
         self.assertIn("set_joint_target_force", names)
         self.assertIn("configure_abb_arm_drive", names)
+        self.assertIn("get_simulation_state", names)
+        self.assertIn("start_simulation", names)
+        self.assertIn("pause_simulation", names)
+        self.assertIn("stop_simulation", names)
         self.assertIn("find_objects", names)
         self.assertIn("duplicate_object", names)
         self.assertIn("rename_object", names)
@@ -49,6 +53,7 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("actuate_youbot_gripper", names)
         self.assertIn("stop_youbot_base", names)
         self.assertIn("configure_abb_arm_drive", names)
+        self.assertIn("start_simulation", names)
 
 
 if __name__ == "__main__":

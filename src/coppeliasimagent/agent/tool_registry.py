@@ -42,6 +42,7 @@ from ..tools.primitives import (
     spawn_primitive,
 )
 from ..tools.scene import check_collision, find_objects, get_scene_graph
+from ..tools.simulation import get_simulation_state, pause_simulation, start_simulation, stop_simulation
 from ..tools.schemas import (
     ActuateGripperInput,
     ActuateYouBotGripperInput,
@@ -55,9 +56,11 @@ from ..tools.schemas import (
     GetJointModeInput,
     GetJointPositionInput,
     GetSceneGraphInput,
+    GetSimulationStateInput,
     GetJointTargetForceInput,
     LoadModelInput,
     MoveIKTargetInput,
+    PauseSimulationInput,
     RenameObjectInput,
     RemoveObjectInput,
     SetObjectColorInput,
@@ -70,7 +73,9 @@ from ..tools.schemas import (
     SetJointTargetVelocityInput,
     SetParentChildInput,
     SetYouBotBaseLockedInput,
+    StartSimulationInput,
     StopYouBotBaseInput,
+    StopSimulationInput,
     SetYouBotWheelVelocitiesInput,
     SetupIKLinkInput,
     SetupYouBotArmIKInput,
@@ -105,6 +110,30 @@ class ToolDefinition:
 
 
 TOOL_REGISTRY: dict[str, ToolDefinition] = {
+    "get_simulation_state": ToolDefinition(
+        name="get_simulation_state",
+        description="Read CoppeliaSim simulation lifecycle state.",
+        input_model=GetSimulationStateInput,
+        handler=get_simulation_state,
+    ),
+    "start_simulation": ToolDefinition(
+        name="start_simulation",
+        description="Start or resume CoppeliaSim simulation execution.",
+        input_model=StartSimulationInput,
+        handler=start_simulation,
+    ),
+    "pause_simulation": ToolDefinition(
+        name="pause_simulation",
+        description="Pause CoppeliaSim simulation execution.",
+        input_model=PauseSimulationInput,
+        handler=pause_simulation,
+    ),
+    "stop_simulation": ToolDefinition(
+        name="stop_simulation",
+        description="Stop CoppeliaSim simulation execution.",
+        input_model=StopSimulationInput,
+        handler=stop_simulation,
+    ),
     "get_scene_graph": ToolDefinition(
         name="get_scene_graph",
         description="Read scene graph states (name, handle, pose) from CoppeliaSim.",

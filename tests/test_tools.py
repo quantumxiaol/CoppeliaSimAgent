@@ -12,7 +12,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from coppeliasimagent.core.exceptions import ToolValidationError
-from coppeliasimagent.tools import kinematics, models, primitives, scene
+from coppeliasimagent.tools import kinematics, models, primitives, scene, simulation
 
 
 class FakeSim:
@@ -46,10 +46,14 @@ class FakeSim:
     jointdynctrl_position = 23
     jointdynctrl_spring = 24
     jointdynctrl_callback = 25
+    simulation_stopped = 0
+    simulation_paused = 8
+    simulation_advancing_running = 16
 
     def __init__(self) -> None:
         self.next_handle = 100
         self.calls: list[tuple[str, tuple]] = []
+        self.simulation_state = self.simulation_stopped
         self.object_types = {
             1: self.object_shape_type,
             2: self.object_dummy_type,
@@ -450,6 +454,22 @@ class FakeSim:
         self.reset_dynamic_calls.append(handle)
         return 1
 
+    def getSimulationState(self) -> int:  # noqa: N802
+        self.calls.append(("getSimulationState", ()))
+        return self.simulation_state
+
+    def startSimulation(self) -> None:  # noqa: N802
+        self.calls.append(("startSimulation", ()))
+        self.simulation_state = self.simulation_advancing_running
+
+    def pauseSimulation(self) -> None:  # noqa: N802
+        self.calls.append(("pauseSimulation", ()))
+        self.simulation_state = self.simulation_paused
+
+    def stopSimulation(self) -> None:  # noqa: N802
+        self.calls.append(("stopSimulation", ()))
+        self.simulation_state = self.simulation_stopped
+
 
 class FakeSimIK:
     constraint_x = 1
@@ -549,6 +569,23 @@ class TestTools(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["name"], "shape_a")
         self.assertEqual(items[0]["handle"], 1)
+
+    def test_simulation_lifecycle_tools(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.simulation.get_sim", return_value=sim):
+            state_before = simulation.get_simulation_state()
+            state_running = simulation.start_simulation()
+            state_paused = simulation.pause_simulation()
+            state_stopped = simulation.stop_simulation()
+
+        self.assertEqual(state_before["state"], "simulation_stopped")
+        self.assertFalse(state_before["is_running"])
+        self.assertEqual(state_running["state"], "simulation_advancing_running")
+        self.assertTrue(state_running["is_running"])
+        self.assertEqual(state_paused["state"], "simulation_paused")
+        self.assertFalse(state_paused["is_running"])
+        self.assertEqual(state_stopped["state"], "simulation_stopped")
+        self.assertFalse(state_stopped["is_running"])
 
     def test_duplicate_object_with_offset(self) -> None:
         sim = FakeSim()

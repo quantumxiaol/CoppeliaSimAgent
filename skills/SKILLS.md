@@ -29,6 +29,10 @@ python skills/toolcli.py list
 
 场景与对象：
 
+- `get_simulation_state`
+- `start_simulation`
+- `pause_simulation`
+- `stop_simulation`
 - `get_scene_graph`
 - `find_objects`
 - `check_collision`
@@ -78,3 +82,5 @@ python skills/toolcli.py list
 - 每个工具的参数定义来自 `agent/tool_registry.py` 中绑定的 Pydantic `input_model`
 - 精确参数请用 `show` 查看，不要靠猜
 - `call` 会真实调用底层工具；如果当前没有连上 CoppeliaSim，对需要仿真连接的工具会直接报错
+- 涉及动力学运动时，先用 `get_simulation_state` 检查是否为 running；若未运行，先调用 `start_simulation`
+- `start_simulation`、`pause_simulation`、`stop_simulation` 返回时可能还是过渡态；调用后要再执行一次 `get_simulation_state`，确认最终稳态

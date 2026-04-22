@@ -198,6 +198,20 @@ python skills/toolcli.py --help
 - 查看某个工具的参数 schema
 - 以 JSON payload 直接调用工具
 
+仿真生命周期也已经纳入工具集；对于依赖动力学的运动，先检查或启动仿真：
+
+```bash
+python skills/toolcli.py call get_simulation_state
+python skills/toolcli.py call start_simulation
+python skills/toolcli.py call pause_simulation
+python skills/toolcli.py call stop_simulation
+```
+
+说明：
+
+- 涉及动力学运动时，先用 `get_simulation_state` 检查是否为 running；若未运行，先调用 `start_simulation`
+- `start_simulation`、`pause_simulation`、`stop_simulation` 返回时可能还是过渡态；调用后要再执行一次 `get_simulation_state`，确认最终稳态
+
 ### CLI 示例提问（Tool Use）
 
 下面这些问题可以直接在 `uv run coppelia-agent-cli` 中输入：
@@ -362,12 +376,34 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 
 你有这样的skills/SKILLS.md。
 
-任务描述：
+你需要完成下面的任务：
 
 - 在 CoppeliaSim 中加载 `robot_ttm/close_jar.ttm`
 - 放置一个机械臂模型 `robot_ttm/ABB IRB 4600-40-255.ttm`
 - 将机械臂移动到任务场景附近
 - 控制机械臂去推动 `close_jar` 场景中的 `jar`
+
+快速执行：
+
+```bash
+python test/live_task_push_close_jar.py
+```
+
+常用调参示例：
+
+```bash
+python test/live_task_push_close_jar.py \
+  --abb-offset-from-jar=-0.9,0.0,0.0 \
+  --pre-pose-deg=0,-28,42,0,-18,0 \
+  --push-pose-deg=0,-16,58,0,-26,0 \
+  --push-wait-seconds=3.0
+```
+
+说明：
+
+- 脚本默认会先加载 `close_jar.ttm`，再按 `jar1` 的位置放置 ABB。
+- 推动动作依赖仿真正在运行；如果 simulator 处于 stopped 或 paused 状态，动态关节不会把 `jar` 推开。
+- 如果 `jar1` 没动，优先调 `--abb-offset-from-jar`、`--pre-pose-deg` 和 `--push-pose-deg`。
 
 本轮关键探索：
 

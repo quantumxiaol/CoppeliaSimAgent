@@ -42,6 +42,7 @@ from ..tools.primitives import (
     spawn_primitive,
 )
 from ..tools.scene import check_collision, find_objects, get_scene_graph
+from ..tools.simulation import get_simulation_state, pause_simulation, start_simulation, stop_simulation
 
 
 def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool = False) -> FastMCP:
@@ -68,6 +69,22 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         round_digits: int = 3,
     ) -> dict[str, dict[str, object]]:
         return get_scene_graph(include_types=include_types, round_digits=round_digits)
+
+    @mcp.tool(name="get_simulation_state", description="Read simulation lifecycle state.")
+    def get_simulation_state_tool() -> dict[str, int | str | bool]:
+        return get_simulation_state()
+
+    @mcp.tool(name="start_simulation", description="Start or resume simulation execution.")
+    def start_simulation_tool() -> dict[str, int | str | bool]:
+        return start_simulation()
+
+    @mcp.tool(name="pause_simulation", description="Pause simulation execution.")
+    def pause_simulation_tool() -> dict[str, int | str | bool]:
+        return pause_simulation()
+
+    @mcp.tool(name="stop_simulation", description="Stop simulation execution.")
+    def stop_simulation_tool() -> dict[str, int | str | bool]:
+        return stop_simulation()
 
     @mcp.tool(name="find_objects", description="Find scene objects by name query and type filters.")
     def find_objects_tool(

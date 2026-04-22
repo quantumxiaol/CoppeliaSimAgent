@@ -29,6 +29,7 @@ class TestToolCli(unittest.TestCase):
             code = main(["list"])
         self.assertEqual(code, 0)
         self.assertIn("get_scene_graph", stdout.getvalue())
+        self.assertIn("start_simulation", stdout.getvalue())
 
     def test_show_contains_parameters(self) -> None:
         stdout = io.StringIO()
@@ -39,6 +40,15 @@ class TestToolCli(unittest.TestCase):
         self.assertIn("name: load_model", output)
         self.assertIn("parameters:", output)
         self.assertIn("model_path", output)
+
+    def test_show_empty_schema_tool(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = main(["show", "start_simulation"])
+        self.assertEqual(code, 0)
+        output = stdout.getvalue()
+        self.assertIn("name: start_simulation", output)
+        self.assertIn('"properties": {}', output)
 
     def test_call_uses_registry(self) -> None:
         stdout = io.StringIO()

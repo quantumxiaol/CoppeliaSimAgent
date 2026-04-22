@@ -35,6 +35,7 @@ from .primitives import (
     spawn_primitive,
 )
 from .scene import assert_no_collision, check_collision, find_objects, get_scene_graph
+from .simulation import get_simulation_state, pause_simulation, start_simulation, stop_simulation
 
 __all__ = [
     "actuate_gripper",
@@ -50,10 +51,12 @@ __all__ = [
     "get_joint_mode",
     "get_joint_position",
     "get_scene_graph",
+    "get_simulation_state",
     "get_joint_target_force",
     "load_model",
     "load_robot_model",
     "move_ik_target",
+    "pause_simulation",
     "rename_object",
     "remove_object",
     "set_object_color",
@@ -68,6 +71,8 @@ __all__ = [
     "set_youbot_base_locked",
     "set_youbot_wheel_velocities",
     "stop_youbot_base",
+    "stop_simulation",
+    "start_simulation",
     "setup_ik_link",
     "setup_youbot_arm_ik",
     "spawn_cuboid",
