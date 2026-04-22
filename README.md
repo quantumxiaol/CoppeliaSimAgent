@@ -175,6 +175,29 @@ CLI 会展示：
 - 每次工具响应摘要
 - agent 最终回复
 
+## ToolCLI（无 LLM）
+
+如果你只想直接查看和调用工具，而不经过 LLM，可使用 `toolcli`：
+
+```bash
+uv run coppelia-toolcli --help
+uv run coppelia-toolcli list
+uv run coppelia-toolcli show load_model
+uv run coppelia-toolcli call find_objects --payload '{"name_query":"jar","include_types":["shape"]}'
+```
+
+也可以直接从 `skills/` 下运行包装脚本：
+
+```bash
+python skills/toolcli.py --help
+```
+
+`toolcli` 直接复用 `agent/tool_registry.py` 中注册的工具和 Pydantic 参数模型，适合：
+
+- 查看当前有哪些工具
+- 查看某个工具的参数 schema
+- 以 JSON payload 直接调用工具
+
 ### CLI 示例提问（Tool Use）
 
 下面这些问题可以直接在 `uv run coppelia-agent-cli` 中输入：
@@ -335,12 +358,14 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
   - 在该模式下，优先用 `set_joint_position` 做机械臂姿态测试；`set_joint_target_position` 不一定会继续驱动。
 - 这些实现基于 CoppeliaSim Regular API 的 `sim.getObject`、`sim.getJointPosition`、`sim.setJointPosition`、`sim.setJointTargetPosition`、`sim.setJointTargetVelocity`，以及 ZMQ Remote API 暴露的同名 `sim.*` 调用。
 
-## close_jar 推 jar 任务记录
+## close_jar 推 jar 任务
+
+你有这样的skills/SKILLS.md。
 
 任务描述：
 
 - 在 CoppeliaSim 中加载 `robot_ttm/close_jar.ttm`
-- 放置一个机械臂模型
+- 放置一个机械臂模型 `robot_ttm/ABB IRB 4600-40-255.ttm`
 - 将机械臂移动到任务场景附近
 - 控制机械臂去推动 `close_jar` 场景中的 `jar`
 

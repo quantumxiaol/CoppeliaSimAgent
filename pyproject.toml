@@ -30,6 +30,7 @@ dependencies = [
 [project.scripts]
 coppelia-mcp-server = "coppeliasimagent.servers.mcp_server:main"
 coppelia-agent-cli = "coppeliasimagent.cli.chat:main"
+coppelia-toolcli = "coppeliasimagent.cli.toolcli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"] 
