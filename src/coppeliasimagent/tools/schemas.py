@@ -34,6 +34,21 @@ class JointCommandMode(str, Enum):
     TARGET_POSITION = "target_position"
 
 
+class JointMode(str, Enum):
+    KINEMATIC = "kinematic"
+    DEPENDENT = "dependent"
+    DYNAMIC = "dynamic"
+
+
+class JointDynCtrlMode(str, Enum):
+    FREE = "free"
+    FORCE = "force"
+    VELOCITY = "velocity"
+    POSITION = "position"
+    SPRING = "spring"
+    CALLBACK = "callback"
+
+
 class SceneObjectType(str, Enum):
     SHAPE = "shape"
     DUMMY = "dummy"
@@ -379,6 +394,46 @@ class SetJointTargetVelocityInput(ToolInputModel):
         return _validate_float_list(value, field_name="motion_params", max_length=2)
 
 
+class GetJointModeInput(ToolInputModel):
+    handle: int
+
+
+class SetJointModeInput(ToolInputModel):
+    handle: int
+    joint_mode: JointMode
+
+
+class GetJointDynCtrlModeInput(ToolInputModel):
+    handle: int
+
+
+class SetJointDynCtrlModeInput(ToolInputModel):
+    handle: int
+    dyn_ctrl_mode: JointDynCtrlMode
+
+
+class GetJointTargetForceInput(ToolInputModel):
+    handle: int
+
+
+class GetJointForceInput(ToolInputModel):
+    handle: int
+
+
+class SetJointTargetForceInput(ToolInputModel):
+    handle: int
+    force_or_torque: float
+    signed_value: bool = True
+
+    @field_validator("force_or_torque")
+    @classmethod
+    def validate_force_or_torque(cls, value: float) -> float:
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("force_or_torque must be finite")
+        return value
+
+
 class ActuateGripperInput(ToolInputModel):
     signal_name: str = Field(min_length=1)
     closed: bool
@@ -563,6 +618,32 @@ class SetYouBotBaseLockedInput(ToolInputModel):
     @classmethod
     def validate_motion_params(cls, value: list[float] | None) -> list[float] | None:
         return _validate_float_list(value, field_name="motion_params", max_length=2)
+
+
+class ConfigureAbbArmDriveInput(ToolInputModel):
+    robot_path: str = Field(default="/IRB4600", min_length=1)
+    joint_mode: JointMode = JointMode.DYNAMIC
+    dyn_ctrl_mode: JointDynCtrlMode = JointDynCtrlMode.POSITION
+    max_force_or_torque: float = 2000.0
+    signed_value: bool = True
+    include_aux_joint: bool = False
+    reset_dynamics: bool = True
+
+    @field_validator("robot_path")
+    @classmethod
+    def validate_robot_path(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("robot_path cannot be empty")
+        return value
+
+    @field_validator("max_force_or_torque")
+    @classmethod
+    def validate_max_force_or_torque(cls, value: float) -> float:
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("max_force_or_torque must be finite")
+        return value
 
 
 def as_payload(model: ToolInputModel) -> dict[str, Any]:

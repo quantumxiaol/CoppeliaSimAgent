@@ -30,12 +30,22 @@ class FakeSim:
 
     handle_scene = -2
     objintparam_type = 4000
+    jointintparam_dynctrlmode = 4001
     object_shape_type = 1
     object_dummy_type = 2
     object_joint_type = 3
     object_camera_type = 4
     object_light_type = 5
     object_forcesensor_type = 6
+    jointmode_kinematic = 10
+    jointmode_dependent = 11
+    jointmode_dynamic = 12
+    jointdynctrl_free = 20
+    jointdynctrl_force = 21
+    jointdynctrl_velocity = 22
+    jointdynctrl_position = 23
+    jointdynctrl_spring = 24
+    jointdynctrl_callback = 25
 
     def __init__(self) -> None:
         self.next_handle = 100
@@ -57,6 +67,14 @@ class FakeSim:
             18: self.object_joint_type,
             19: self.object_shape_type,
             20: self.object_shape_type,
+            30: self.object_dummy_type,
+            31: self.object_joint_type,
+            32: self.object_joint_type,
+            33: self.object_joint_type,
+            34: self.object_joint_type,
+            35: self.object_joint_type,
+            36: self.object_joint_type,
+            37: self.object_joint_type,
         }
         self.object_names = {
             1: "shape_a",
@@ -75,6 +93,14 @@ class FakeSim:
             18: "rollingJoint_fl",
             19: "ME_Platfo2_sub1",
             20: "wheel_respondable_rr",
+            30: "IRB4600",
+            31: "IRB4600_joint1",
+            32: "IRB4600_joint2",
+            33: "IRB4600_joint3",
+            34: "IRB4600_joint4",
+            35: "IRB4600_joint5",
+            36: "IRB4600_joint6",
+            37: "auxJoint",
         }
         self.object_positions = {
             1: [0.123456, 1.0, 2.0],
@@ -93,6 +119,14 @@ class FakeSim:
             18: [1.2, -0.15, 0.05],
             19: [1.0, 0.0, 0.05],
             20: [1.0, 0.15, 0.05],
+            30: [0.7, 0.0, 0.0],
+            31: [0.7, 0.0, 0.1],
+            32: [0.7, 0.0, 0.2],
+            33: [0.7, 0.0, 0.3],
+            34: [0.7, 0.0, 0.4],
+            35: [0.7, 0.0, 0.5],
+            36: [0.7, 0.0, 0.6],
+            37: [0.7, 0.0, 0.7],
         }
         self.object_orientations = {
             1: [0.0, math.pi / 2, 0.0],
@@ -111,6 +145,14 @@ class FakeSim:
             18: [0.0, 0.0, 0.0],
             19: [0.0, 0.0, 0.0],
             20: [0.0, 0.0, 0.0],
+            30: [0.0, 0.0, 0.0],
+            31: [0.0, 0.0, 0.0],
+            32: [0.0, 0.0, 0.0],
+            33: [0.0, 0.0, 0.0],
+            34: [0.0, 0.0, 0.0],
+            35: [0.0, 0.0, 0.0],
+            36: [0.0, 0.0, 0.0],
+            37: [0.0, 0.0, 0.0],
         }
         self.object_parents = {
             1: -1,
@@ -129,6 +171,14 @@ class FakeSim:
             18: 10,
             19: 10,
             20: 10,
+            30: -1,
+            31: 30,
+            32: 31,
+            33: 32,
+            34: 33,
+            35: 34,
+            36: 35,
+            37: 36,
         }
         self.collision_map = {(1, 2): 1, (1, 3): 0}
         self.joint_positions = {
@@ -140,9 +190,28 @@ class FakeSim:
             16: 0.0,
             17: 0.0,
             18: 0.0,
+            31: 0.0,
+            32: 0.1,
+            33: 0.2,
+            34: 0.3,
+            35: 0.4,
+            36: 0.5,
+            37: 0.6,
         }
         self.joint_target_positions: dict[int, float] = {}
         self.joint_target_velocities: dict[int, float] = {}
+        self.joint_target_forces: dict[int, float] = {11: 50.0}
+        self.joint_forces: dict[int, float] = {11: 12.5}
+        self.joint_modes: dict[int, int] = {
+            11: self.jointmode_kinematic,
+            31: self.jointmode_kinematic,
+            32: self.jointmode_kinematic,
+            33: self.jointmode_kinematic,
+            34: self.jointmode_kinematic,
+            35: self.jointmode_kinematic,
+            36: self.jointmode_kinematic,
+            37: self.jointmode_kinematic,
+        }
         self.joint_intervals = {
             3: (False, [-1.0, 1.0]),
             11: (False, [-math.pi, math.pi]),
@@ -152,9 +221,25 @@ class FakeSim:
             16: (False, [-10.0, 20.0]),
             17: (False, [-10.0, 20.0]),
             18: (False, [-10.0, 20.0]),
+            31: (False, [-math.pi, math.pi]),
+            32: (False, [-math.pi, math.pi]),
+            33: (False, [-math.pi, math.pi]),
+            34: (False, [-math.pi, math.pi]),
+            35: (False, [-math.pi, math.pi]),
+            36: (False, [-math.pi, math.pi]),
+            37: (False, [-math.pi, math.pi]),
         }
         self.linked_dummies: dict[int, int] = {}
-        self.object_int_params: dict[tuple[int, int], int] = {}
+        self.object_int_params: dict[tuple[int, int], int] = {
+            (11, self.jointintparam_dynctrlmode): self.jointdynctrl_velocity,
+            (31, self.jointintparam_dynctrlmode): self.jointdynctrl_free,
+            (32, self.jointintparam_dynctrlmode): self.jointdynctrl_free,
+            (33, self.jointintparam_dynctrlmode): self.jointdynctrl_free,
+            (34, self.jointintparam_dynctrlmode): self.jointdynctrl_free,
+            (35, self.jointintparam_dynctrlmode): self.jointdynctrl_free,
+            (36, self.jointintparam_dynctrlmode): self.jointdynctrl_free,
+            (37, self.jointintparam_dynctrlmode): self.jointdynctrl_free,
+        }
         self.reset_dynamic_calls: list[int] = []
 
     def _children_of(self, parent: int) -> list[int]:
@@ -246,7 +331,9 @@ class FakeSim:
         return sorted(self.object_names)
 
     def getObjectInt32Param(self, handle: int, param: int) -> int:  # noqa: N802
-        return self.object_types[handle]
+        if param == self.objintparam_type:
+            return self.object_types[handle]
+        return self.object_int_params.get((handle, param), 0)
 
     def getObjectType(self, handle: int) -> int:  # noqa: N802
         return self.object_types[handle]
@@ -317,6 +404,13 @@ class FakeSim:
     def getJointPosition(self, handle: int) -> float:  # noqa: N802
         return self.joint_positions[handle]
 
+    def getJointMode(self, handle: int) -> int:  # noqa: N802
+        return self.joint_modes[handle], 0
+
+    def setJointMode(self, handle: int, joint_mode: int) -> None:  # noqa: N802
+        self.calls.append(("setJointMode", (handle, joint_mode)))
+        self.joint_modes[handle] = joint_mode
+
     def setJointPosition(self, handle: int, position: float) -> None:  # noqa: N802
         self.calls.append(("setJointPosition", (handle, position)))
         self.joint_positions[handle] = float(position)
@@ -332,6 +426,16 @@ class FakeSim:
 
     def getJointTargetVelocity(self, handle: int) -> float:  # noqa: N802
         return self.joint_target_velocities.get(handle, 0.0)
+
+    def getJointTargetForce(self, handle: int) -> float:  # noqa: N802
+        return self.joint_target_forces.get(handle, 0.0)
+
+    def setJointTargetForce(self, handle: int, force_or_torque: float, signed_value: bool = True) -> None:  # noqa: N802
+        self.calls.append(("setJointTargetForce", (handle, force_or_torque, signed_value)))
+        self.joint_target_forces[handle] = float(force_or_torque)
+
+    def getJointForce(self, handle: int) -> float:  # noqa: N802
+        return self.joint_forces.get(handle, 0.0)
 
     def getJointInterval(self, handle: int) -> tuple[bool, list[float]]:  # noqa: N802
         cyclic, interval = self.joint_intervals[handle]
@@ -528,6 +632,52 @@ class TestTools(unittest.TestCase):
         self.assertEqual(velocity, 1.5)
         self.assertEqual(sim.joint_positions[11], 0.5)
         self.assertEqual(sim.joint_target_velocities[11], 1.5)
+
+    def test_dynamic_joint_drive_functions(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.kinematics.get_sim", return_value=sim):
+            joint_mode = kinematics.get_joint_mode(11)
+            applied_joint_mode = kinematics.set_joint_mode(11, "dynamic")
+            dyn_ctrl_mode = kinematics.get_joint_dyn_ctrl_mode(11)
+            applied_dyn_ctrl_mode = kinematics.set_joint_dyn_ctrl_mode(11, "position")
+            max_force = kinematics.get_joint_target_force(11)
+            applied_force = kinematics.set_joint_target_force(11, 250.0, signed_value=False)
+            current_force = kinematics.get_joint_force(11)
+
+        self.assertEqual(joint_mode, sim.jointmode_kinematic)
+        self.assertEqual(applied_joint_mode, sim.jointmode_dynamic)
+        self.assertEqual(sim.joint_modes[11], sim.jointmode_dynamic)
+        self.assertEqual(dyn_ctrl_mode, sim.jointdynctrl_velocity)
+        self.assertEqual(applied_dyn_ctrl_mode, sim.jointdynctrl_position)
+        self.assertEqual(sim.object_int_params[(11, sim.jointintparam_dynctrlmode)], sim.jointdynctrl_position)
+        self.assertEqual(max_force, 50.0)
+        self.assertEqual(applied_force, 250.0)
+        self.assertEqual(sim.joint_target_forces[11], 250.0)
+        self.assertEqual(current_force, 12.5)
+
+    def test_configure_abb_arm_drive(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.kinematics.get_sim", return_value=sim):
+            out = kinematics.configure_abb_arm_drive(
+                robot_path="/IRB4600",
+                joint_mode="dynamic",
+                dyn_ctrl_mode="position",
+                max_force_or_torque=1234.0,
+                include_aux_joint=False,
+                reset_dynamics=True,
+            )
+
+        self.assertEqual(out["robot_handle"], 30)
+        self.assertEqual(out["joint_handles"], [31, 32, 33, 34, 35, 36])
+        self.assertEqual(out["joint_mode_value"], sim.jointmode_dynamic)
+        self.assertEqual(out["dyn_ctrl_mode_value"], sim.jointdynctrl_position)
+        self.assertEqual(out["max_force_or_torque"], 1234.0)
+        self.assertIn(30 | sim.handleflag_model, sim.reset_dynamic_calls)
+        for handle in [31, 32, 33, 34, 35, 36]:
+            self.assertEqual(sim.joint_modes[handle], sim.jointmode_dynamic)
+            self.assertEqual(sim.object_int_params[(handle, sim.jointintparam_dynctrlmode)], sim.jointdynctrl_position)
+            self.assertEqual(sim.joint_target_forces[handle], 1234.0)
+        self.assertNotIn(37, out["joint_handles"])
 
     def test_setup_youbot_arm_ik_and_gripper(self) -> None:
         sim = FakeSim()

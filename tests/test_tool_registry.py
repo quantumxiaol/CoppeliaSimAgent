@@ -23,6 +23,10 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("setup_youbot_arm_ik", names)
         self.assertIn("drive_youbot_base", names)
         self.assertIn("set_youbot_base_locked", names)
+        self.assertIn("get_joint_mode", names)
+        self.assertIn("set_joint_dyn_ctrl_mode", names)
+        self.assertIn("set_joint_target_force", names)
+        self.assertIn("configure_abb_arm_drive", names)
         self.assertIn("find_objects", names)
         self.assertIn("duplicate_object", names)
         self.assertIn("rename_object", names)
@@ -44,6 +48,7 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("actuate_gripper", names)
         self.assertIn("actuate_youbot_gripper", names)
         self.assertIn("stop_youbot_base", names)
+        self.assertIn("configure_abb_arm_drive", names)
 
 
 if __name__ == "__main__":

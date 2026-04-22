@@ -269,6 +269,12 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 
 ## 工具函数概览
 
+说明：
+
+- 下面列出的工具不只是内部 Python 函数，已经同时暴露在 `agent/tool_registry.py` 和 `servers/mcp_server.py`。
+- `tool_registry.py` 用于本地 Function Calling / agent backend。
+- `mcp_server.py` 会把同一批能力挂成 MCP tools，供 `stdio`、`sse`、`streamable-http` 客户端调用。
+
 ### 场景感知
 
 - `get_scene_graph(include_types, round_digits)`
@@ -295,13 +301,21 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 
 - `spawn_waypoint(position, size, relative_to)`
 - `get_joint_position(handle)`
+- `get_joint_mode(handle)`
+- `set_joint_mode(handle, joint_mode)`
+- `get_joint_dyn_ctrl_mode(handle)`
+- `set_joint_dyn_ctrl_mode(handle, dyn_ctrl_mode)`
 - `set_joint_position(handle, position)`
 - `set_joint_target_position(handle, target_position, motion_params)`
+- `get_joint_target_force(handle)`
+- `set_joint_target_force(handle, force_or_torque, signed_value)`
+- `get_joint_force(handle)`
 - `set_joint_target_velocity(handle, target_velocity, motion_params)`
 - `set_youbot_wheel_velocities(robot_path, wheel_velocities, motion_params)`
 - `drive_youbot_base(robot_path, forward_velocity, lateral_velocity, yaw_velocity, motion_params)`
 - `stop_youbot_base(robot_path, motion_params)`
 - `set_youbot_base_locked(robot_path, locked, base_shape_paths, zero_wheels, reset_dynamics, motion_params)`
+- `configure_abb_arm_drive(robot_path, joint_mode, dyn_ctrl_mode, max_force_or_torque, signed_value, include_aux_joint, reset_dynamics)`
 - `setup_ik_link(base_handle, tip_handle, target_handle, constraints_mask)`
 - `setup_youbot_arm_ik(robot_path, base_path, tip_parent_path, tip_dummy_name, target_dummy_name, tip_offset, target_offset, constraints_mask, reuse_existing)`
 - `move_ik_target(environment_handle, group_handle, target_handle, position, relative_to, steps)`
@@ -320,6 +334,36 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
   - 这个模式适合先验证“机械臂是否能接触/推动目标”。
   - 在该模式下，优先用 `set_joint_position` 做机械臂姿态测试；`set_joint_target_position` 不一定会继续驱动。
 - 这些实现基于 CoppeliaSim Regular API 的 `sim.getObject`、`sim.getJointPosition`、`sim.setJointPosition`、`sim.setJointTargetPosition`、`sim.setJointTargetVelocity`，以及 ZMQ Remote API 暴露的同名 `sim.*` 调用。
+
+## close_jar 推 jar 任务记录
+
+任务描述：
+
+- 在 CoppeliaSim 中加载 `robot_ttm/close_jar.ttm`
+- 放置一个机械臂模型
+- 将机械臂移动到任务场景附近
+- 控制机械臂去推动 `close_jar` 场景中的 `jar`
+
+本轮关键探索：
+
+- 实际执行时，最终采用的是 `ABB IRB 4600-40-255.ttm`，没有继续使用 `youBot`。原因是 ABB 放进场景后整体更稳定，适合作为“推 jar”验证基线。
+- 场景准备阶段，先用 `load_model` 放置 `close_jar` 和 ABB，再用 `find_objects` / `get_scene_graph` 确认 `/IRB4600`、`/close_jar/jar1` 等对象是否存在、位置是否合理。目标效果是先把场景和目标对象定位清楚，再进入控制阶段。
+- 接触准备阶段，先用 `set_joint_position` 把 ABB 摆到接近 `jar1` 的初始姿态。目标效果是让末端连杆先靠近 `jar`，缩短后续动态推动的距离。
+- 动态驱动阶段，核心用到的是 `configure_abb_arm_drive`。它会批量给 ABB 关节设置 `joint_mode`、`dyn_ctrl_mode` 和 `target_force`。目标效果是不再只是“瞬时改角度”，而是让机械臂在仿真运行中真正出力。
+- 关节驱动调试阶段，会配合 `get_joint_mode`、`set_joint_mode`、`get_joint_dyn_ctrl_mode`、`set_joint_dyn_ctrl_mode`、`get_joint_target_force`、`set_joint_target_force`、`get_joint_force` 去读写和确认关节状态。目标效果是确认 ABB 每个关节确实处于可驱动、可施力的状态。
+- 推动动作阶段，实际使用 `set_joint_target_position` 让 ABB 从接触前姿态扫向推动姿态。目标效果是让末端连杆沿着 `jar1` 附近的轨迹前推，产生稳定接触并把 `jar1` 推开。
+- 过程中还确认了两个必要前提：目标 `jar` 需要是可被推动的动态对象，ABB 可见连杆需要可响应碰撞；否则即使关节在动，也不会形成有效物理推动。
+- 最终真机验证结果是：ABB 已经能把 `jar1` 推离原位，说明“放置模型 -> 接近目标 -> 动态驱动 -> 接触推动”这条工具链已经打通。
+
+基于上面的排查，当前已经补上 ABB 动态关节驱动所需的基础工具：
+
+- `get_joint_mode` / `set_joint_mode`
+- `get_joint_dyn_ctrl_mode` / `set_joint_dyn_ctrl_mode`
+- `get_joint_target_force` / `set_joint_target_force`
+- `get_joint_force`
+- `configure_abb_arm_drive`
+
+这层的目标是继续验证 `sim.setJointTargetForce`、joint mode 和 dynamic control mode 的组合，让 ABB 在运行中真正出力，稳定完成推 `jar`，而不是只做无力的关节瞬时重定位。
 
 ## Pydantic 校验约定
 

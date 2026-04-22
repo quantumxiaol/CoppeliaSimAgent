@@ -10,10 +10,18 @@ from mcp.server.fastmcp import FastMCP
 from ..tools.kinematics import (
     actuate_gripper,
     actuate_youbot_gripper,
+    configure_abb_arm_drive,
     drive_youbot_base,
+    get_joint_dyn_ctrl_mode,
+    get_joint_force,
+    get_joint_mode,
     get_joint_position,
+    get_joint_target_force,
     move_ik_target,
+    set_joint_dyn_ctrl_mode,
+    set_joint_mode,
     set_joint_position,
+    set_joint_target_force,
     set_joint_target_position,
     set_joint_target_velocity,
     set_youbot_base_locked,
@@ -220,6 +228,26 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         position = get_joint_position(handle=handle)
         return {"handle": handle, "position": position}
 
+    @mcp.tool(name="get_joint_mode", description="Read one joint's operation mode.")
+    def get_joint_mode_tool(handle: int) -> dict[str, Any]:
+        mode = get_joint_mode(handle=handle)
+        return {"handle": handle, "joint_mode": mode}
+
+    @mcp.tool(name="set_joint_mode", description="Set one joint's operation mode.")
+    def set_joint_mode_tool(handle: int, joint_mode: str) -> dict[str, Any]:
+        applied = set_joint_mode(handle=handle, joint_mode=joint_mode)
+        return {"handle": handle, "joint_mode": joint_mode, "joint_mode_value": applied}
+
+    @mcp.tool(name="get_joint_dyn_ctrl_mode", description="Read one joint's dynamic control mode.")
+    def get_joint_dyn_ctrl_mode_tool(handle: int) -> dict[str, Any]:
+        mode = get_joint_dyn_ctrl_mode(handle=handle)
+        return {"handle": handle, "dyn_ctrl_mode": mode}
+
+    @mcp.tool(name="set_joint_dyn_ctrl_mode", description="Set one joint's dynamic control mode.")
+    def set_joint_dyn_ctrl_mode_tool(handle: int, dyn_ctrl_mode: str) -> dict[str, Any]:
+        applied = set_joint_dyn_ctrl_mode(handle=handle, dyn_ctrl_mode=dyn_ctrl_mode)
+        return {"handle": handle, "dyn_ctrl_mode": dyn_ctrl_mode, "dyn_ctrl_mode_value": applied}
+
     @mcp.tool(name="set_joint_position", description="Set one joint's immediate position.")
     def set_joint_position_tool(handle: int, position: float) -> dict[str, Any]:
         applied = set_joint_position(handle=handle, position=position)
@@ -237,6 +265,29 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             motion_params=motion_params,
         )
         return {"handle": handle, "target_position": applied}
+
+    @mcp.tool(name="get_joint_target_force", description="Read one joint's maximum force or torque setting.")
+    def get_joint_target_force_tool(handle: int) -> dict[str, Any]:
+        force_or_torque = get_joint_target_force(handle=handle)
+        return {"handle": handle, "force_or_torque": force_or_torque}
+
+    @mcp.tool(name="set_joint_target_force", description="Set one joint's maximum force or torque.")
+    def set_joint_target_force_tool(
+        handle: int,
+        force_or_torque: float,
+        signed_value: bool = True,
+    ) -> dict[str, Any]:
+        applied = set_joint_target_force(
+            handle=handle,
+            force_or_torque=force_or_torque,
+            signed_value=signed_value,
+        )
+        return {"handle": handle, "force_or_torque": applied, "signed_value": signed_value}
+
+    @mcp.tool(name="get_joint_force", description="Read one joint's currently applied force or torque.")
+    def get_joint_force_tool(handle: int) -> dict[str, Any]:
+        force_or_torque = get_joint_force(handle=handle)
+        return {"handle": handle, "force_or_torque": force_or_torque}
 
     @mcp.tool(name="set_joint_target_velocity", description="Set one joint's target velocity.")
     def set_joint_target_velocity_tool(
@@ -302,6 +353,29 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             zero_wheels=zero_wheels,
             reset_dynamics=reset_dynamics,
             motion_params=motion_params,
+        )
+
+    @mcp.tool(
+        name="configure_abb_arm_drive",
+        description="Configure ABB IRB4600 joints for dynamic drive with force and control mode settings.",
+    )
+    def configure_abb_arm_drive_tool(
+        robot_path: str = "/IRB4600",
+        joint_mode: str = "dynamic",
+        dyn_ctrl_mode: str = "position",
+        max_force_or_torque: float = 2000.0,
+        signed_value: bool = True,
+        include_aux_joint: bool = False,
+        reset_dynamics: bool = True,
+    ) -> dict[str, Any]:
+        return configure_abb_arm_drive(
+            robot_path=robot_path,
+            joint_mode=joint_mode,
+            dyn_ctrl_mode=dyn_ctrl_mode,
+            max_force_or_torque=max_force_or_torque,
+            signed_value=signed_value,
+            include_aux_joint=include_aux_joint,
+            reset_dynamics=reset_dynamics,
         )
 
     @mcp.tool(name="setup_ik_link", description="Set up IK chain base-tip-target.")

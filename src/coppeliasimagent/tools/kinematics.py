@@ -9,10 +9,18 @@ from ..core.exceptions import ToolValidationError
 from .schemas import (
     ActuateGripperInput,
     ActuateYouBotGripperInput,
+    ConfigureAbbArmDriveInput,
     DriveYouBotBaseInput,
+    GetJointDynCtrlModeInput,
+    GetJointForceInput,
+    GetJointModeInput,
     GetJointPositionInput,
+    GetJointTargetForceInput,
     MoveIKTargetInput,
+    SetJointDynCtrlModeInput,
+    SetJointModeInput,
     SetJointPositionInput,
+    SetJointTargetForceInput,
     SetJointTargetPositionInput,
     SetJointTargetVelocityInput,
     SetYouBotBaseLockedInput,
@@ -47,6 +55,21 @@ _YOUBOT_BASE_SHAPE_NAMES = (
     "wheel_respondable_fr",
     "wheel_respondable_fl",
 )
+
+_JOINT_MODE_CONST_MAP = {
+    "kinematic": "jointmode_kinematic",
+    "dependent": "jointmode_dependent",
+    "dynamic": "jointmode_dynamic",
+}
+
+_JOINT_DYN_CTRL_CONST_MAP = {
+    "free": "jointdynctrl_free",
+    "force": "jointdynctrl_force",
+    "velocity": "jointdynctrl_velocity",
+    "position": "jointdynctrl_position",
+    "spring": "jointdynctrl_spring",
+    "callback": "jointdynctrl_callback",
+}
 
 
 def _validation_error(exc: ValidationError) -> ToolValidationError:
@@ -99,6 +122,34 @@ def _set_object_alias(sim: object, handle: int, alias: str) -> None:
     raise RuntimeError("Current CoppeliaSim API does not expose setObjectAlias/setObjectName")
 
 
+def _resolve_sim_constant(sim: object, attr_name: str) -> int:
+    if not hasattr(sim, attr_name):
+        raise RuntimeError(f"CoppeliaSim API constant missing: {attr_name}")
+    return int(getattr(sim, attr_name))
+
+
+def _resolve_joint_mode_value(sim: object, joint_mode: str) -> int:
+    return _resolve_sim_constant(sim, _JOINT_MODE_CONST_MAP[joint_mode])
+
+
+def _resolve_joint_dyn_ctrl_mode_value(sim: object, dyn_ctrl_mode: str) -> int:
+    return _resolve_sim_constant(sim, _JOINT_DYN_CTRL_CONST_MAP[dyn_ctrl_mode])
+
+
+def _normalize_scalar_result(value: object, *, field_name: str) -> int | float:
+    if isinstance(value, (list, tuple)):
+        if not value:
+            raise RuntimeError(f"CoppeliaSim API returned an empty result for {field_name}")
+        value = value[0]
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value
+    raise RuntimeError(f"CoppeliaSim API returned an unsupported result for {field_name}: {value!r}")
+
+
 def _normalize_child_path(robot_path: str, object_path: str) -> str:
     return object_path if object_path.startswith("/") else f"{robot_path}/{object_path}"
 
@@ -129,6 +180,18 @@ def _youbot_wheel_handles(sim: object, robot_path: str) -> list[int]:
         _resolve_object_handle(sim, f"{robot_path}/{joint_name}")
         for joint_name in _YOUBOT_WHEEL_JOINT_NAMES
     ]
+
+
+def _abb_arm_joint_handles(sim: object, robot_path: str, *, include_aux_joint: bool = False) -> list[int]:
+    joint_handles: list[int] = []
+    for handle in sim.getObjectsInTree(_resolve_object_handle(sim, robot_path)):
+        if int(sim.getObjectType(handle)) != int(getattr(sim, "object_joint_type")):
+            continue
+        name = str(sim.getObjectAlias(handle) if hasattr(sim, "getObjectAlias") else sim.getObjectName(handle))
+        if not include_aux_joint and name == "auxJoint":
+            continue
+        joint_handles.append(int(handle))
+    return joint_handles
 
 
 def _ensure_dummy(
@@ -278,6 +341,54 @@ def get_joint_position(handle: int) -> float:
     return float(sim.getJointPosition(payload.handle))
 
 
+def get_joint_mode(handle: int) -> int:
+    """读取关节工作模式。"""
+    try:
+        payload = GetJointModeInput.model_validate({"handle": handle})
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    return int(_normalize_scalar_result(sim.getJointMode(payload.handle), field_name="getJointMode"))
+
+
+def set_joint_mode(handle: int, joint_mode: str) -> int:
+    """设置关节工作模式。"""
+    try:
+        payload = SetJointModeInput.model_validate({"handle": handle, "joint_mode": joint_mode})
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    mode_value = _resolve_joint_mode_value(sim, payload.joint_mode.value)
+    sim.setJointMode(payload.handle, mode_value)
+    return mode_value
+
+
+def get_joint_dyn_ctrl_mode(handle: int) -> int:
+    """读取关节动态控制模式。"""
+    try:
+        payload = GetJointDynCtrlModeInput.model_validate({"handle": handle})
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    return int(sim.getObjectInt32Param(payload.handle, sim.jointintparam_dynctrlmode))
+
+
+def set_joint_dyn_ctrl_mode(handle: int, dyn_ctrl_mode: str) -> int:
+    """设置关节动态控制模式。"""
+    try:
+        payload = SetJointDynCtrlModeInput.model_validate({"handle": handle, "dyn_ctrl_mode": dyn_ctrl_mode})
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    mode_value = _resolve_joint_dyn_ctrl_mode_value(sim, payload.dyn_ctrl_mode.value)
+    sim.setObjectInt32Param(payload.handle, sim.jointintparam_dynctrlmode, mode_value)
+    return mode_value
+
+
 def set_joint_position(handle: int, position: float) -> float:
     """直接设置关节当前位置。"""
     try:
@@ -316,6 +427,46 @@ def set_joint_target_position(
     else:
         sim.setJointTargetPosition(payload.handle, payload.target_position)
     return float(payload.target_position)
+
+
+def get_joint_target_force(handle: int) -> float:
+    """读取关节可施加的最大力/力矩。"""
+    try:
+        payload = GetJointTargetForceInput.model_validate({"handle": handle})
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    return float(sim.getJointTargetForce(payload.handle))
+
+
+def get_joint_force(handle: int) -> float:
+    """读取关节当前实际力/力矩。"""
+    try:
+        payload = GetJointForceInput.model_validate({"handle": handle})
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    return float(sim.getJointForce(payload.handle))
+
+
+def set_joint_target_force(handle: int, force_or_torque: float, signed_value: bool = True) -> float:
+    """设置关节可施加的最大力/力矩。"""
+    try:
+        payload = SetJointTargetForceInput.model_validate(
+            {
+                "handle": handle,
+                "force_or_torque": force_or_torque,
+                "signed_value": signed_value,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    sim.setJointTargetForce(payload.handle, payload.force_or_torque, payload.signed_value)
+    return float(payload.force_or_torque)
 
 
 def set_joint_target_velocity(
@@ -509,6 +660,59 @@ def set_youbot_base_locked(
         "zero_wheels": payload.zero_wheels,
         "modified_shape_handles": shape_handles,
         "missing_shape_paths": missing_paths,
+        "reset_result": reset_result,
+    }
+
+
+def configure_abb_arm_drive(
+    robot_path: str = "/IRB4600",
+    joint_mode: str = "dynamic",
+    dyn_ctrl_mode: str = "position",
+    max_force_or_torque: float = 2000.0,
+    signed_value: bool = True,
+    include_aux_joint: bool = False,
+    reset_dynamics: bool = True,
+) -> dict[str, object]:
+    """批量配置 ABB IRB4600 机械臂关节的工作模式、动态控制模式和最大驱动力矩。"""
+    try:
+        payload = ConfigureAbbArmDriveInput.model_validate(
+            {
+                "robot_path": robot_path,
+                "joint_mode": joint_mode,
+                "dyn_ctrl_mode": dyn_ctrl_mode,
+                "max_force_or_torque": max_force_or_torque,
+                "signed_value": signed_value,
+                "include_aux_joint": include_aux_joint,
+                "reset_dynamics": reset_dynamics,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    robot_handle = _resolve_object_handle(sim, payload.robot_path)
+    joint_handles = _abb_arm_joint_handles(sim, payload.robot_path, include_aux_joint=payload.include_aux_joint)
+    joint_mode_value = _resolve_joint_mode_value(sim, payload.joint_mode.value)
+    dyn_ctrl_mode_value = _resolve_joint_dyn_ctrl_mode_value(sim, payload.dyn_ctrl_mode.value)
+
+    for handle in joint_handles:
+        sim.setJointMode(handle, joint_mode_value)
+        sim.setObjectInt32Param(handle, sim.jointintparam_dynctrlmode, dyn_ctrl_mode_value)
+        sim.setJointTargetForce(handle, payload.max_force_or_torque, payload.signed_value)
+
+    reset_result = None
+    if payload.reset_dynamics:
+        reset_result = _reset_dynamic_object(sim, robot_handle, include_model=True)
+
+    return {
+        "robot_path": payload.robot_path,
+        "robot_handle": robot_handle,
+        "joint_handles": joint_handles,
+        "joint_mode": payload.joint_mode.value,
+        "joint_mode_value": joint_mode_value,
+        "dyn_ctrl_mode": payload.dyn_ctrl_mode.value,
+        "dyn_ctrl_mode_value": dyn_ctrl_mode_value,
+        "max_force_or_torque": float(payload.max_force_or_torque),
         "reset_result": reset_result,
     }
 
