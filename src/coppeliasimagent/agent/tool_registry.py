@@ -7,7 +7,18 @@ from typing import Any, Callable, Mapping
 
 from pydantic import BaseModel
 
-from ..tools.kinematics import actuate_gripper, move_ik_target, setup_ik_link, spawn_waypoint
+from ..tools.kinematics import (
+    actuate_gripper,
+    actuate_youbot_gripper,
+    get_joint_position,
+    move_ik_target,
+    set_joint_position,
+    set_joint_target_position,
+    set_joint_target_velocity,
+    setup_ik_link,
+    setup_youbot_arm_ik,
+    spawn_waypoint,
+)
 from ..tools.models import load_model, set_parent_child
 from ..tools.primitives import (
     duplicate_object,
@@ -21,9 +32,11 @@ from ..tools.primitives import (
 from ..tools.scene import check_collision, find_objects, get_scene_graph
 from ..tools.schemas import (
     ActuateGripperInput,
+    ActuateYouBotGripperInput,
     CheckCollisionInput,
     DuplicateObjectInput,
     FindObjectsInput,
+    GetJointPositionInput,
     GetSceneGraphInput,
     LoadModelInput,
     MoveIKTargetInput,
@@ -31,8 +44,12 @@ from ..tools.schemas import (
     RemoveObjectInput,
     SetObjectColorInput,
     SetObjectPoseInput,
+    SetJointPositionInput,
+    SetJointTargetPositionInput,
+    SetJointTargetVelocityInput,
     SetParentChildInput,
     SetupIKLinkInput,
+    SetupYouBotArmIKInput,
     SpawnCuboidInput,
     SpawnPrimitiveInput,
     SpawnWaypointInput,
@@ -142,11 +159,41 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         input_model=SpawnWaypointInput,
         handler=spawn_waypoint,
     ),
+    "get_joint_position": ToolDefinition(
+        name="get_joint_position",
+        description="Read one joint's current position.",
+        input_model=GetJointPositionInput,
+        handler=get_joint_position,
+    ),
+    "set_joint_position": ToolDefinition(
+        name="set_joint_position",
+        description="Set one joint's immediate position.",
+        input_model=SetJointPositionInput,
+        handler=set_joint_position,
+    ),
+    "set_joint_target_position": ToolDefinition(
+        name="set_joint_target_position",
+        description="Set one joint's target position with optional motion profile.",
+        input_model=SetJointTargetPositionInput,
+        handler=set_joint_target_position,
+    ),
+    "set_joint_target_velocity": ToolDefinition(
+        name="set_joint_target_velocity",
+        description="Set one joint's target velocity with optional motion profile.",
+        input_model=SetJointTargetVelocityInput,
+        handler=set_joint_target_velocity,
+    ),
     "setup_ik_link": ToolDefinition(
         name="setup_ik_link",
         description="Create IK environment/group and bind base-tip-target chain.",
         input_model=SetupIKLinkInput,
         handler=setup_ik_link,
+    ),
+    "setup_youbot_arm_ik": ToolDefinition(
+        name="setup_youbot_arm_ik",
+        description="Create/reuse youBot arm tip-target dummies and bind an IK chain.",
+        input_model=SetupYouBotArmIKInput,
+        handler=setup_youbot_arm_ik,
     ),
     "move_ik_target": ToolDefinition(
         name="move_ik_target",
@@ -159,6 +206,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Control gripper open/close through int signal.",
         input_model=ActuateGripperInput,
         handler=actuate_gripper,
+    ),
+    "actuate_youbot_gripper": ToolDefinition(
+        name="actuate_youbot_gripper",
+        description="Open/close the two-jaw youBot gripper via its finger joints.",
+        input_model=ActuateYouBotGripperInput,
+        handler=actuate_youbot_gripper,
     ),
 }
 

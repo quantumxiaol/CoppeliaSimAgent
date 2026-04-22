@@ -26,7 +26,7 @@
 已完成第一阶段：
 
 - `core/connection.py`: 全局连接管理、重连、`simIK/simOMPL` 预加载
-- `tools/*`: 场景感知、基础几何体、模型管理、IK 与夹爪信号控制
+- `tools/*`: 场景感知、基础几何体、模型管理、IK、关节控制与 youBot 夹爪适配
 - `agent/tool_registry.py`: 基于 Pydantic 的工具注册和 JSON Schema 导出
 - `servers/mcp_server.py`: 将全部工具挂载为 MCP tools（stdio/sse/streamable-http）
 - `agent/mcp_backend.py`: LLM agent backend（通过 MCP client 调用 tools）
@@ -203,6 +203,18 @@ CLI 会展示：
 把刚复制出来的 lid 改名为 jar_lid_copy，并把颜色改成蓝色（RGB=[0.2,0.4,1.0]）。
 ```
 
+```text
+找到 youBot 的 5 个机械臂关节，读取当前角度，并把第一个关节旋转到 0.3 rad。
+```
+
+```text
+为 /youBot 自动建立机械臂 IK tip/target，然后把 target 向左前上方移动 5cm。
+```
+
+```text
+把 youBot 夹爪闭合；如果需要，再重新张开。
+```
+
 预期工具调用路径（示例）：
 
 - `spawn_primitive` 或 `spawn_cuboid`
@@ -282,9 +294,24 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 ### 运动学与末端执行器
 
 - `spawn_waypoint(position, size, relative_to)`
+- `get_joint_position(handle)`
+- `set_joint_position(handle, position)`
+- `set_joint_target_position(handle, target_position, motion_params)`
+- `set_joint_target_velocity(handle, target_velocity, motion_params)`
 - `setup_ik_link(base_handle, tip_handle, target_handle, constraints_mask)`
+- `setup_youbot_arm_ik(robot_path, base_path, tip_parent_path, tip_dummy_name, target_dummy_name, tip_offset, target_offset, constraints_mask, reuse_existing)`
 - `move_ik_target(environment_handle, group_handle, target_handle, position, relative_to, steps)`
 - `actuate_gripper(signal_name, closed)`
+- `actuate_youbot_gripper(robot_path, closed, command_mode, joint1_open, joint1_closed, joint2_open, joint2_closed, motion_params)`
+
+## youBot 控制说明
+
+- 现在已经支持直接控制单个 joint 的当前位置、目标位置和目标速度。
+- `setup_youbot_arm_ik` 会自动为 `/youBot` 创建或复用 `youBotArmTip` 与 `youBotArmTarget` 两个 dummy，并直接返回 IK 环境与 group 句柄。
+- `actuate_youbot_gripper` 默认按当前 `KUKA YouBot.ttm` 的两指关节范围做开合适配：
+  - 打开：`joint1=0.025`，`joint2=-0.05`
+  - 闭合：`joint1=0.0`，`joint2=0.0`
+- 这些实现基于 CoppeliaSim Regular API 的 `sim.getObject`、`sim.getJointPosition`、`sim.setJointPosition`、`sim.setJointTargetPosition`、`sim.setJointTargetVelocity`，以及 ZMQ Remote API 暴露的同名 `sim.*` 调用。
 
 ## Pydantic 校验约定
 

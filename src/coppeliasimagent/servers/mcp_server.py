@@ -7,7 +7,18 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from ..tools.kinematics import actuate_gripper, move_ik_target, setup_ik_link, spawn_waypoint
+from ..tools.kinematics import (
+    actuate_gripper,
+    actuate_youbot_gripper,
+    get_joint_position,
+    move_ik_target,
+    set_joint_position,
+    set_joint_target_position,
+    set_joint_target_velocity,
+    setup_ik_link,
+    setup_youbot_arm_ik,
+    spawn_waypoint,
+)
 from ..tools.models import load_model, set_parent_child
 from ..tools.primitives import (
     duplicate_object,
@@ -200,6 +211,42 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         handle = spawn_waypoint(position=position, size=size, relative_to=relative_to)
         return {"handle": handle}
 
+    @mcp.tool(name="get_joint_position", description="Read one joint's current position.")
+    def get_joint_position_tool(handle: int) -> dict[str, Any]:
+        position = get_joint_position(handle=handle)
+        return {"handle": handle, "position": position}
+
+    @mcp.tool(name="set_joint_position", description="Set one joint's immediate position.")
+    def set_joint_position_tool(handle: int, position: float) -> dict[str, Any]:
+        applied = set_joint_position(handle=handle, position=position)
+        return {"handle": handle, "position": applied}
+
+    @mcp.tool(name="set_joint_target_position", description="Set one joint's target position.")
+    def set_joint_target_position_tool(
+        handle: int,
+        target_position: float,
+        motion_params: list[float] | None = None,
+    ) -> dict[str, Any]:
+        applied = set_joint_target_position(
+            handle=handle,
+            target_position=target_position,
+            motion_params=motion_params,
+        )
+        return {"handle": handle, "target_position": applied}
+
+    @mcp.tool(name="set_joint_target_velocity", description="Set one joint's target velocity.")
+    def set_joint_target_velocity_tool(
+        handle: int,
+        target_velocity: float,
+        motion_params: list[float] | None = None,
+    ) -> dict[str, Any]:
+        applied = set_joint_target_velocity(
+            handle=handle,
+            target_velocity=target_velocity,
+            motion_params=motion_params,
+        )
+        return {"handle": handle, "target_velocity": applied}
+
     @mcp.tool(name="setup_ik_link", description="Set up IK chain base-tip-target.")
     def setup_ik_link_tool(
         base_handle: int,
@@ -212,6 +259,30 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             tip_handle=tip_handle,
             target_handle=target_handle,
             constraints_mask=constraints_mask,
+        )
+
+    @mcp.tool(name="setup_youbot_arm_ik", description="Create/reuse youBot arm tip-target dummies and bind an IK chain.")
+    def setup_youbot_arm_ik_tool(
+        robot_path: str = "/youBot",
+        base_path: str | None = None,
+        tip_parent_path: str | None = None,
+        tip_dummy_name: str = "youBotArmTip",
+        target_dummy_name: str = "youBotArmTarget",
+        tip_offset: list[float] | None = None,
+        target_offset: list[float] | None = None,
+        constraints_mask: int | None = None,
+        reuse_existing: bool = True,
+    ) -> dict[str, Any]:
+        return setup_youbot_arm_ik(
+            robot_path=robot_path,
+            base_path=base_path,
+            tip_parent_path=tip_parent_path,
+            tip_dummy_name=tip_dummy_name,
+            target_dummy_name=target_dummy_name,
+            tip_offset=tip_offset,
+            target_offset=target_offset,
+            constraints_mask=constraints_mask,
+            reuse_existing=reuse_existing,
         )
 
     @mcp.tool(name="move_ik_target", description="Move IK target and solve IK.")
@@ -242,6 +313,28 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
     def actuate_gripper_tool(signal_name: str, closed: bool) -> dict[str, Any]:
         signal_value = actuate_gripper(signal_name=signal_name, closed=closed)
         return {"status": "success", "signal_name": signal_name, "value": signal_value}
+
+    @mcp.tool(name="actuate_youbot_gripper", description="Open/close the two-jaw youBot gripper via its finger joints.")
+    def actuate_youbot_gripper_tool(
+        robot_path: str = "/youBot",
+        closed: bool = True,
+        command_mode: str = "target_position",
+        joint1_open: float = 0.025,
+        joint1_closed: float = 0.0,
+        joint2_open: float = -0.05,
+        joint2_closed: float = 0.0,
+        motion_params: list[float] | None = None,
+    ) -> dict[str, Any]:
+        return actuate_youbot_gripper(
+            robot_path=robot_path,
+            closed=closed,
+            command_mode=command_mode,
+            joint1_open=joint1_open,
+            joint1_closed=joint1_closed,
+            joint2_open=joint2_open,
+            joint2_closed=joint2_closed,
+            motion_params=motion_params,
+        )
 
     return mcp
 

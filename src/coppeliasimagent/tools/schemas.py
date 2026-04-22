@@ -29,6 +29,11 @@ class ColorComponent(str, Enum):
     TRANSPARENCY = "transparency"
 
 
+class JointCommandMode(str, Enum):
+    POSITION = "position"
+    TARGET_POSITION = "target_position"
+
+
 class SceneObjectType(str, Enum):
     SHAPE = "shape"
     DUMMY = "dummy"
@@ -54,6 +59,27 @@ def _validate_color(value: list[float], *, field_name: str) -> list[float]:
     for channel in normalized:
         if channel < 0.0 or channel > 1.0:
             raise ValueError(f"{field_name} must be in [0, 1]")
+    return normalized
+
+
+def _validate_float_list(
+    value: list[float] | None,
+    *,
+    field_name: str,
+    min_length: int = 0,
+    max_length: int | None = None,
+) -> list[float] | None:
+    if value is None:
+        return None
+
+    normalized = [float(v) for v in value]
+    if len(normalized) < min_length:
+        raise ValueError(f"{field_name} must contain at least {min_length} numbers")
+    if max_length is not None and len(normalized) > max_length:
+        raise ValueError(f"{field_name} must contain at most {max_length} numbers")
+    for item in normalized:
+        if not math.isfinite(item):
+            raise ValueError(f"{field_name} contains non-finite numbers")
     return normalized
 
 
@@ -284,6 +310,42 @@ class SetupIKLinkInput(ToolInputModel):
     constraints_mask: int | None = None
 
 
+class GetJointPositionInput(ToolInputModel):
+    handle: int
+
+
+class SetJointPositionInput(ToolInputModel):
+    handle: int
+    position: float
+
+    @field_validator("position")
+    @classmethod
+    def validate_position(cls, value: float) -> float:
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("position must be finite")
+        return value
+
+
+class SetJointTargetPositionInput(ToolInputModel):
+    handle: int
+    target_position: float
+    motion_params: list[float] | None = None
+
+    @field_validator("target_position")
+    @classmethod
+    def validate_target_position(cls, value: float) -> float:
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("target_position must be finite")
+        return value
+
+    @field_validator("motion_params")
+    @classmethod
+    def validate_motion_params(cls, value: list[float] | None) -> list[float] | None:
+        return _validate_float_list(value, field_name="motion_params", max_length=3)
+
+
 class MoveIKTargetInput(ToolInputModel):
     environment_handle: int
     group_handle: int
@@ -298,6 +360,25 @@ class MoveIKTargetInput(ToolInputModel):
         return _validate_vec3(value, field_name="position")
 
 
+class SetJointTargetVelocityInput(ToolInputModel):
+    handle: int
+    target_velocity: float
+    motion_params: list[float] | None = None
+
+    @field_validator("target_velocity")
+    @classmethod
+    def validate_target_velocity(cls, value: float) -> float:
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("target_velocity must be finite")
+        return value
+
+    @field_validator("motion_params")
+    @classmethod
+    def validate_motion_params(cls, value: list[float] | None) -> list[float] | None:
+        return _validate_float_list(value, field_name="motion_params", max_length=2)
+
+
 class ActuateGripperInput(ToolInputModel):
     signal_name: str = Field(min_length=1)
     closed: bool
@@ -309,6 +390,73 @@ class ActuateGripperInput(ToolInputModel):
         if not value:
             raise ValueError("signal_name cannot be empty")
         return value
+
+
+class SetupYouBotArmIKInput(ToolInputModel):
+    robot_path: str = Field(default="/youBot", min_length=1)
+    base_path: str | None = None
+    tip_parent_path: str | None = None
+    tip_dummy_name: str = Field(default="youBotArmTip", min_length=1)
+    target_dummy_name: str = Field(default="youBotArmTarget", min_length=1)
+    tip_offset: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0], min_length=3, max_length=3)
+    target_offset: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0], min_length=3, max_length=3)
+    constraints_mask: int | None = None
+    reuse_existing: bool = True
+
+    @field_validator("robot_path", "base_path", "tip_parent_path")
+    @classmethod
+    def validate_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            raise ValueError("path cannot be blank")
+        return text
+
+    @field_validator("tip_dummy_name", "target_dummy_name")
+    @classmethod
+    def validate_dummy_name(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("dummy name cannot be blank")
+        return text
+
+    @field_validator("tip_offset", "target_offset")
+    @classmethod
+    def validate_offset(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="offset")
+
+
+class ActuateYouBotGripperInput(ToolInputModel):
+    robot_path: str = Field(default="/youBot", min_length=1)
+    closed: bool
+    command_mode: JointCommandMode = JointCommandMode.TARGET_POSITION
+    joint1_open: float = 0.025
+    joint1_closed: float = 0.0
+    joint2_open: float = -0.05
+    joint2_closed: float = 0.0
+    motion_params: list[float] | None = None
+
+    @field_validator("robot_path")
+    @classmethod
+    def validate_robot_path(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("robot_path cannot be empty")
+        return value
+
+    @field_validator("joint1_open", "joint1_closed", "joint2_open", "joint2_closed")
+    @classmethod
+    def validate_joint_scalar(cls, value: float) -> float:
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("joint command values must be finite")
+        return value
+
+    @field_validator("motion_params")
+    @classmethod
+    def validate_motion_params(cls, value: list[float] | None) -> list[float] | None:
+        return _validate_float_list(value, field_name="motion_params", max_length=3)
 
 
 def as_payload(model: ToolInputModel) -> dict[str, Any]:

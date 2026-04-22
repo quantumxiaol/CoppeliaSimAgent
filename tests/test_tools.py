@@ -45,6 +45,11 @@ class FakeSim:
             3: self.object_joint_type,
             4: self.object_dummy_type,
             5: self.object_shape_type,
+            10: self.object_dummy_type,
+            11: self.object_joint_type,
+            12: self.object_shape_type,
+            13: self.object_joint_type,
+            14: self.object_joint_type,
         }
         self.object_names = {
             1: "shape_a",
@@ -52,6 +57,11 @@ class FakeSim:
             3: "joint_a",
             4: "model_base",
             5: "model_shape",
+            10: "youBot",
+            11: "youBotArmJoint0",
+            12: "Rectangle7",
+            13: "youBotGripperJoint1",
+            14: "youBotGripperJoint2",
         }
         self.object_positions = {
             1: [0.123456, 1.0, 2.0],
@@ -59,6 +69,11 @@ class FakeSim:
             3: [5.0, 5.0, 5.0],
             4: [0.2, 0.2, 0.2],
             5: [0.2, 0.2, 0.2],
+            10: [1.0, 0.0, 0.1],
+            11: [1.0, 0.0, 0.2],
+            12: [1.1, 0.0, 0.25],
+            13: [1.11, 0.03, 0.22],
+            14: [1.11, -0.03, 0.22],
         }
         self.object_orientations = {
             1: [0.0, math.pi / 2, 0.0],
@@ -66,12 +81,55 @@ class FakeSim:
             3: [0.0, 0.0, 0.0],
             4: [0.0, 0.0, 0.0],
             5: [0.0, 0.0, 0.0],
+            10: [0.0, 0.0, 0.0],
+            11: [0.0, 0.0, 0.0],
+            12: [0.0, 0.0, 0.0],
+            13: [0.0, 0.0, 0.0],
+            14: [0.0, 0.0, 0.0],
+        }
+        self.object_parents = {
+            1: -1,
+            2: -1,
+            3: -1,
+            4: -1,
+            5: 4,
+            10: -1,
+            11: 10,
+            12: 11,
+            13: 12,
+            14: 12,
         }
         self.collision_map = {(1, 2): 1, (1, 3): 0}
-        self.subtree_map = {
-            self.handle_scene: [1, 2, 3, 4, 5],
-            4: [4, 5],
+        self.joint_positions = {
+            3: 0.0,
+            11: 0.1,
+            13: 0.025,
+            14: -0.05,
         }
+        self.joint_target_positions: dict[int, float] = {}
+        self.joint_target_velocities: dict[int, float] = {}
+        self.joint_intervals = {
+            3: (False, [-1.0, 1.0]),
+            11: (False, [-math.pi, math.pi]),
+            13: (False, [0.0, 0.025]),
+            14: (False, [-0.05, 0.05]),
+        }
+        self.linked_dummies: dict[int, int] = {}
+
+    def _children_of(self, parent: int) -> list[int]:
+        return [handle for handle, value in self.object_parents.items() if value == parent]
+
+    def _descendants_of(self, root: int) -> list[int]:
+        out = [root]
+        for child in self._children_of(root):
+            out.extend(self._descendants_of(child))
+        return out
+
+    def _matches_under(self, root: int | None, alias: str) -> list[int]:
+        candidates = self.object_names if root is None else {
+            handle: self.object_names[handle] for handle in self._descendants_of(root)
+        }
+        return [handle for handle, name in candidates.items() if name == alias]
 
     def createPrimitiveShape(self, primitive: int, size: list[float]) -> int:  # noqa: N802
         handle = self.next_handle
@@ -81,11 +139,17 @@ class FakeSim:
         self.object_names[handle] = f"Cuboid#{handle}"
         self.object_positions[handle] = [0.0, 0.0, 0.0]
         self.object_orientations[handle] = [0.0, 0.0, 0.0]
+        self.object_parents[handle] = -1
         return handle
 
     def setObjectPosition(self, handle: int, relative_to: int, position: list[float]) -> None:  # noqa: N802
         self.calls.append(("setObjectPosition", (handle, relative_to, position)))
-        self.object_positions[handle] = [float(v) for v in position]
+        if relative_to in (-1, self.handle_scene):
+            self.object_positions[handle] = [float(v) for v in position]
+            return
+
+        ref = self.object_positions[relative_to]
+        self.object_positions[handle] = [float(ref[i]) + float(position[i]) for i in range(3)]
 
     def setShapeColor(self, handle: int, component: object, color_comp: int, color: list[float]) -> None:  # noqa: N802
         self.calls.append(("setShapeColor", (handle, component, color_comp, color)))
@@ -95,7 +159,12 @@ class FakeSim:
 
     def setObjectOrientation(self, handle: int, relative_to: int, orientation: list[float]) -> None:  # noqa: N802
         self.calls.append(("setObjectOrientation", (handle, relative_to, orientation)))
-        self.object_orientations[handle] = [float(v) for v in orientation]
+        if relative_to in (-1, self.handle_scene):
+            self.object_orientations[handle] = [float(v) for v in orientation]
+            return
+
+        ref = self.object_orientations[relative_to]
+        self.object_orientations[handle] = [float(ref[i]) + float(orientation[i]) for i in range(3)]
 
     def removeObject(self, handle: int) -> None:  # noqa: N802
         self.calls.append(("removeObject", (handle,)))
@@ -107,10 +176,12 @@ class FakeSim:
         self.calls.append(("loadModel", (model_path,)))
         handle = self.next_handle
         self.next_handle += 1
+        self.object_parents[handle] = -1
         return handle
 
     def setObjectParent(self, child: int, parent: int, keep_in_place: bool) -> None:  # noqa: N802
         self.calls.append(("setObjectParent", (child, parent, keep_in_place)))
+        self.object_parents[child] = parent
 
     def copyPasteObjects(self, handles: list[int], options: int = 0) -> list[int]:  # noqa: N802
         self.calls.append(("copyPasteObjects", (handles, options)))
@@ -121,16 +192,45 @@ class FakeSim:
         self.object_names[out] = f"{self.object_names[src]}_copy"
         self.object_positions[out] = list(self.object_positions[src])
         self.object_orientations[out] = list(self.object_orientations[src])
+        self.object_parents[out] = self.object_parents.get(src, -1)
         return [out]
 
     def getObjectsInTree(self, root: int) -> list[int]:  # noqa: N802
         self.calls.append(("getObjectsInTree", (root,)))
-        return list(self.subtree_map.get(root, [root] if root in self.object_names else sorted(self.object_names)))
+        if root == self.handle_scene:
+            return sorted(self.object_names)
+        if root in self.object_names:
+            return self._descendants_of(root)
+        return sorted(self.object_names)
 
     def getObjectInt32Param(self, handle: int, param: int) -> int:  # noqa: N802
         return self.object_types[handle]
 
+    def getObject(self, object_path: str, options: dict | None = None) -> int:  # noqa: N802
+        options = options or {}
+        parts = [part for part in object_path.split("/") if part]
+        if not parts:
+            if options.get("noError"):
+                return -1
+            raise RuntimeError(f"invalid object path: {object_path}")
+
+        current_matches = self._matches_under(None, parts[0])
+        for part in parts[1:]:
+            next_matches: list[int] = []
+            for handle in current_matches:
+                next_matches.extend(self._matches_under(handle, part))
+            current_matches = next_matches
+
+        if not current_matches:
+            if options.get("noError"):
+                return -1
+            raise RuntimeError(f"object not found: {object_path}")
+        return current_matches[0]
+
     def getObjectName(self, handle: int) -> str:  # noqa: N802
+        return self.object_names[handle]
+
+    def getObjectAlias(self, handle: int) -> str:  # noqa: N802
         return self.object_names[handle]
 
     def setObjectAlias(self, handle: int, alias: str) -> None:  # noqa: N802
@@ -143,6 +243,15 @@ class FakeSim:
     def getObjectOrientation(self, handle: int, relative_to: int) -> list[float]:  # noqa: N802
         return self.object_orientations[handle]
 
+    def getObjectParent(self, handle: int) -> int:  # noqa: N802
+        return self.object_parents.get(handle, -1)
+
+    def getObjectChild(self, handle: int, index: int) -> int:  # noqa: N802
+        children = self._children_of(handle)
+        if index < 0 or index >= len(children):
+            return -1
+        return children[index]
+
     def checkCollision(self, entity1: int, entity2: int) -> int:  # noqa: N802
         return self.collision_map.get((entity1, entity2), 0)
 
@@ -150,10 +259,39 @@ class FakeSim:
         self.calls.append(("createDummy", (size,)))
         handle = self.next_handle
         self.next_handle += 1
+        self.object_types[handle] = self.object_dummy_type
+        self.object_names[handle] = f"Dummy#{handle}"
+        self.object_positions[handle] = [0.0, 0.0, 0.0]
+        self.object_orientations[handle] = [0.0, 0.0, 0.0]
+        self.object_parents[handle] = -1
         return handle
 
     def setInt32Signal(self, signal_name: str, value: int) -> None:  # noqa: N802
         self.calls.append(("setInt32Signal", (signal_name, value)))
+
+    def getJointPosition(self, handle: int) -> float:  # noqa: N802
+        return self.joint_positions[handle]
+
+    def setJointPosition(self, handle: int, position: float) -> None:  # noqa: N802
+        self.calls.append(("setJointPosition", (handle, position)))
+        self.joint_positions[handle] = float(position)
+
+    def setJointTargetPosition(self, handle: int, target: float, motion_params: list[float] | None = None) -> None:  # noqa: N802
+        self.calls.append(("setJointTargetPosition", (handle, target, motion_params)))
+        self.joint_target_positions[handle] = float(target)
+        self.joint_positions[handle] = float(target)
+
+    def setJointTargetVelocity(self, handle: int, target: float, motion_params: list[float] | None = None) -> None:  # noqa: N802
+        self.calls.append(("setJointTargetVelocity", (handle, target, motion_params)))
+        self.joint_target_velocities[handle] = float(target)
+
+    def getJointInterval(self, handle: int) -> tuple[bool, list[float]]:  # noqa: N802
+        cyclic, interval = self.joint_intervals[handle]
+        return cyclic, list(interval)
+
+    def setLinkDummy(self, dummy_handle: int, linked_dummy_handle: int) -> None:  # noqa: N802
+        self.calls.append(("setLinkDummy", (dummy_handle, linked_dummy_handle)))
+        self.linked_dummies[dummy_handle] = linked_dummy_handle
 
 
 class FakeSimIK:
@@ -322,6 +460,48 @@ class TestTools(unittest.TestCase):
         self.assertEqual(out, 1)
         handle_group_calls = [c for c in simik.calls if c[0] == "handleGroup"]
         self.assertEqual(len(handle_group_calls), 3)
+
+    def test_joint_control_functions(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.kinematics.get_sim", return_value=sim):
+            current = kinematics.get_joint_position(11)
+            direct = kinematics.set_joint_position(11, 0.25)
+            target = kinematics.set_joint_target_position(11, 0.5, motion_params=[1.0, 2.0, 3.0])
+            velocity = kinematics.set_joint_target_velocity(11, 1.5, motion_params=[2.0, 3.0])
+
+        self.assertEqual(current, 0.1)
+        self.assertEqual(direct, 0.25)
+        self.assertEqual(target, 0.5)
+        self.assertEqual(velocity, 1.5)
+        self.assertEqual(sim.joint_positions[11], 0.5)
+        self.assertEqual(sim.joint_target_velocities[11], 1.5)
+
+    def test_setup_youbot_arm_ik_and_gripper(self) -> None:
+        sim = FakeSim()
+        simik = FakeSimIK()
+
+        with patch("coppeliasimagent.tools.kinematics.get_sim", return_value=sim), patch(
+            "coppeliasimagent.tools.kinematics.get_simik", return_value=simik
+        ):
+            ik_info = kinematics.setup_youbot_arm_ik(robot_path="/youBot")
+            close_out = kinematics.actuate_youbot_gripper(
+                robot_path="/youBot",
+                closed=True,
+                command_mode="position",
+            )
+            open_out = kinematics.actuate_youbot_gripper(
+                robot_path="/youBot",
+                closed=False,
+                command_mode="target_position",
+            )
+
+        self.assertEqual(ik_info["base_handle"], 10)
+        self.assertEqual(ik_info["tip_parent_handle"], 12)
+        self.assertIn(("setLinkDummy", (ik_info["tip_handle"], ik_info["target_handle"])), sim.calls)
+        self.assertEqual(close_out["joint1_position"], 0.0)
+        self.assertEqual(close_out["joint2_position"], 0.0)
+        self.assertEqual(open_out["joint1_target"], 0.025)
+        self.assertEqual(open_out["joint2_target"], -0.05)
 
 
 if __name__ == "__main__":

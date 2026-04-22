@@ -20,10 +20,12 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("spawn_cuboid", names)
         self.assertIn("get_scene_graph", names)
         self.assertIn("setup_ik_link", names)
+        self.assertIn("setup_youbot_arm_ik", names)
         self.assertIn("find_objects", names)
         self.assertIn("duplicate_object", names)
         self.assertIn("rename_object", names)
         self.assertIn("set_object_color", names)
+        self.assertIn("set_joint_target_velocity", names)
 
     def test_unknown_tool_raises(self) -> None:
         with self.assertRaises(KeyError):
@@ -38,6 +40,7 @@ class TestToolRegistry(unittest.TestCase):
         names = {tool["function"]["name"] for tool in tools}
         self.assertIn("spawn_primitive", names)
         self.assertIn("actuate_gripper", names)
+        self.assertIn("actuate_youbot_gripper", names)
 
 
 if __name__ == "__main__":

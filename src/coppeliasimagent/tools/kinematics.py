@@ -8,8 +8,14 @@ from ..core.connection import get_sim, get_simik
 from ..core.exceptions import ToolValidationError
 from .schemas import (
     ActuateGripperInput,
+    ActuateYouBotGripperInput,
+    GetJointPositionInput,
     MoveIKTargetInput,
+    SetJointPositionInput,
+    SetJointTargetPositionInput,
+    SetJointTargetVelocityInput,
     SetupIKLinkInput,
+    SetupYouBotArmIKInput,
     SpawnWaypointInput,
 )
 
@@ -29,6 +35,63 @@ def _default_constraint_mask(simik: object) -> int:
     ):
         mask |= int(getattr(simik, attr, 0))
     return mask
+
+
+def _resolve_object_handle(sim: object, object_path: str, *, no_error: bool = False) -> int:
+    options = {"noError": True} if no_error else {}
+    try:
+        handle = sim.getObject(object_path, options)
+    except TypeError:
+        try:
+            handle = sim.getObject(object_path)
+        except Exception:
+            if no_error:
+                return -1
+            raise
+    except Exception:
+        if no_error:
+            return -1
+        raise
+
+    if handle in (-1, None):
+        if no_error:
+            return -1
+        raise RuntimeError(f"Object not found: {object_path}")
+    return int(handle)
+
+
+def _set_object_alias(sim: object, handle: int, alias: str) -> None:
+    if hasattr(sim, "setObjectAlias"):
+        sim.setObjectAlias(handle, alias)
+        return
+    if hasattr(sim, "setObjectName"):
+        sim.setObjectName(handle, alias)
+        return
+    raise RuntimeError("Current CoppeliaSim API does not expose setObjectAlias/setObjectName")
+
+
+def _ensure_dummy(
+    *,
+    sim: object,
+    object_path: str,
+    alias: str,
+    position_relative_to: int,
+    position: list[float],
+    orientation_relative_to: int,
+    orientation_rad: list[float],
+    parent_handle: int,
+    size: float = 0.02,
+    reuse_existing: bool = True,
+) -> int:
+    handle = _resolve_object_handle(sim, object_path, no_error=True) if reuse_existing else -1
+    if handle == -1:
+        handle = int(sim.createDummy(size))
+
+    sim.setObjectPosition(handle, position_relative_to, position)
+    sim.setObjectOrientation(handle, orientation_relative_to, orientation_rad)
+    sim.setObjectParent(handle, parent_handle, True)
+    _set_object_alias(sim, handle, alias)
+    return handle
 
 
 def spawn_waypoint(position: list[float], size: float = 0.02, relative_to: int = -1) -> int:
@@ -133,7 +196,93 @@ def move_ik_target(
     sim.setObjectPosition(payload.target_handle, payload.relative_to, payload.position)
 
     for _ in range(payload.steps):
-        simik.handleGroup(payload.environment_handle, payload.group_handle)
+        if hasattr(simik, "handleGroup"):
+            simik.handleGroup(payload.environment_handle, payload.group_handle, {"syncWorlds": True})
+        else:
+            if hasattr(simik, "syncFromSim"):
+                simik.syncFromSim(payload.environment_handle, [payload.group_handle])
+            simik.handleGroup(payload.environment_handle, payload.group_handle)
+            if hasattr(simik, "syncToSim"):
+                simik.syncToSim(payload.environment_handle, [payload.group_handle])
+
+
+def get_joint_position(handle: int) -> float:
+    """读取一个非球形关节的当前位置。"""
+    try:
+        payload = GetJointPositionInput.model_validate({"handle": handle})
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    return float(sim.getJointPosition(payload.handle))
+
+
+def set_joint_position(handle: int, position: float) -> float:
+    """直接设置关节当前位置。"""
+    try:
+        payload = SetJointPositionInput.model_validate({"handle": handle, "position": position})
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    sim.setJointPosition(payload.handle, payload.position)
+    return float(payload.position)
+
+
+def set_joint_target_position(
+    handle: int,
+    target_position: float,
+    motion_params: list[float] | None = None,
+) -> float:
+    """设置关节目标位置。
+
+    `motion_params` 对应 CoppeliaSim 的最大速度/加速度/jerk。
+    """
+    try:
+        payload = SetJointTargetPositionInput.model_validate(
+            {
+                "handle": handle,
+                "target_position": target_position,
+                "motion_params": motion_params,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    if payload.motion_params:
+        sim.setJointTargetPosition(payload.handle, payload.target_position, payload.motion_params)
+    else:
+        sim.setJointTargetPosition(payload.handle, payload.target_position)
+    return float(payload.target_position)
+
+
+def set_joint_target_velocity(
+    handle: int,
+    target_velocity: float,
+    motion_params: list[float] | None = None,
+) -> float:
+    """设置关节目标速度。
+
+    `motion_params` 对应 CoppeliaSim 的最大加速度/jerk。
+    """
+    try:
+        payload = SetJointTargetVelocityInput.model_validate(
+            {
+                "handle": handle,
+                "target_velocity": target_velocity,
+                "motion_params": motion_params,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    if payload.motion_params:
+        sim.setJointTargetVelocity(payload.handle, payload.target_velocity, payload.motion_params)
+    else:
+        sim.setJointTargetVelocity(payload.handle, payload.target_velocity)
+    return float(payload.target_velocity)
 
 
 def actuate_gripper(signal_name: str, closed: bool) -> int:
@@ -154,3 +303,149 @@ def actuate_gripper(signal_name: str, closed: bool) -> int:
     signal_value = 1 if payload.closed else 0
     sim.setInt32Signal(payload.signal_name, signal_value)
     return signal_value
+
+
+def setup_youbot_arm_ik(
+    robot_path: str = "/youBot",
+    base_path: str | None = None,
+    tip_parent_path: str | None = None,
+    tip_dummy_name: str = "youBotArmTip",
+    target_dummy_name: str = "youBotArmTarget",
+    tip_offset: list[float] | None = None,
+    target_offset: list[float] | None = None,
+    constraints_mask: int | None = None,
+    reuse_existing: bool = True,
+) -> dict[str, int | dict[int, int] | str]:
+    """为 youBot 机械臂创建/复用 tip 与 target dummy，并建立 IK 链。"""
+    try:
+        payload = SetupYouBotArmIKInput.model_validate(
+            {
+                "robot_path": robot_path,
+                "base_path": base_path,
+                "tip_parent_path": tip_parent_path,
+                "tip_dummy_name": tip_dummy_name,
+                "target_dummy_name": target_dummy_name,
+                "tip_offset": tip_offset if tip_offset is not None else [0.0, 0.0, 0.0],
+                "target_offset": target_offset if target_offset is not None else [0.0, 0.0, 0.0],
+                "constraints_mask": constraints_mask,
+                "reuse_existing": reuse_existing,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    robot_handle = _resolve_object_handle(sim, payload.robot_path)
+    base_handle = _resolve_object_handle(sim, payload.base_path) if payload.base_path else robot_handle
+    tip_parent_handle = _resolve_object_handle(
+        sim,
+        payload.tip_parent_path if payload.tip_parent_path else f"{payload.robot_path}/Rectangle7",
+    )
+
+    tip_path = f"{payload.robot_path}/{payload.tip_dummy_name}"
+    target_path = f"/{payload.target_dummy_name}"
+
+    tip_handle = _ensure_dummy(
+        sim=sim,
+        object_path=tip_path,
+        alias=payload.tip_dummy_name,
+        position_relative_to=tip_parent_handle,
+        position=payload.tip_offset,
+        orientation_relative_to=tip_parent_handle,
+        orientation_rad=[0.0, 0.0, 0.0],
+        parent_handle=tip_parent_handle,
+        reuse_existing=payload.reuse_existing,
+    )
+
+    tip_world_position = [float(v) for v in sim.getObjectPosition(tip_handle, -1)]
+    tip_world_orientation = [float(v) for v in sim.getObjectOrientation(tip_handle, -1)]
+    target_world_position = [
+        float(tip_world_position[i]) + float(payload.target_offset[i]) for i in range(3)
+    ]
+
+    target_handle = _ensure_dummy(
+        sim=sim,
+        object_path=target_path,
+        alias=payload.target_dummy_name,
+        position_relative_to=-1,
+        position=target_world_position,
+        orientation_relative_to=-1,
+        orientation_rad=tip_world_orientation,
+        parent_handle=-1,
+        reuse_existing=payload.reuse_existing,
+    )
+
+    if hasattr(sim, "setLinkDummy"):
+        sim.setLinkDummy(tip_handle, target_handle)
+
+    ik_info = setup_ik_link(
+        base_handle=base_handle,
+        tip_handle=tip_handle,
+        target_handle=target_handle,
+        constraints_mask=payload.constraints_mask,
+    )
+    return {
+        "robot_handle": robot_handle,
+        "base_handle": base_handle,
+        "tip_parent_handle": tip_parent_handle,
+        "tip_handle": tip_handle,
+        "target_handle": target_handle,
+        "robot_path": payload.robot_path,
+        "tip_path": tip_path,
+        "target_path": target_path,
+        **ik_info,
+    }
+
+
+def actuate_youbot_gripper(
+    robot_path: str = "/youBot",
+    closed: bool = True,
+    command_mode: str = "target_position",
+    joint1_open: float = 0.025,
+    joint1_closed: float = 0.0,
+    joint2_open: float = -0.05,
+    joint2_closed: float = 0.0,
+    motion_params: list[float] | None = None,
+) -> dict[str, int | float | str]:
+    """按 youBot 夹爪模型的两指关节约定执行开合。"""
+    try:
+        payload = ActuateYouBotGripperInput.model_validate(
+            {
+                "robot_path": robot_path,
+                "closed": closed,
+                "command_mode": command_mode,
+                "joint1_open": joint1_open,
+                "joint1_closed": joint1_closed,
+                "joint2_open": joint2_open,
+                "joint2_closed": joint2_closed,
+                "motion_params": motion_params,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    joint1_handle = _resolve_object_handle(sim, f"{payload.robot_path}/youBotGripperJoint1")
+    joint2_handle = _resolve_object_handle(sim, f"{payload.robot_path}/youBotGripperJoint2")
+
+    target1 = payload.joint1_closed if payload.closed else payload.joint1_open
+    target2 = payload.joint2_closed if payload.closed else payload.joint2_open
+
+    if payload.command_mode.value == "position":
+        set_joint_position(joint1_handle, target1)
+        set_joint_position(joint2_handle, target2)
+    else:
+        set_joint_target_position(joint1_handle, target1, motion_params=payload.motion_params)
+        set_joint_target_position(joint2_handle, target2, motion_params=payload.motion_params)
+
+    return {
+        "robot_path": payload.robot_path,
+        "command_mode": payload.command_mode.value,
+        "joint1_handle": joint1_handle,
+        "joint2_handle": joint2_handle,
+        "joint1_target": float(target1),
+        "joint2_target": float(target2),
+        "closed": payload.closed,
+        "joint1_position": float(sim.getJointPosition(joint1_handle)),
+        "joint2_position": float(sim.getJointPosition(joint2_handle)),
+    }
