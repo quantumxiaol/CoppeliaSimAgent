@@ -35,6 +35,7 @@ class FakeRemoteAPIClient:
     instances: list["FakeRemoteAPIClient"] = []
     fail_on_sim = False
     missing_plugins: set[str] = set()
+    require_only_plugins: set[str] = set()
 
     def __init__(self, host: str, port: int) -> None:
         self.host = host
@@ -47,9 +48,16 @@ class FakeRemoteAPIClient:
     def getObject(self, name: str) -> object:  # noqa: N802
         if name == "sim" and FakeRemoteAPIClient.fail_on_sim:
             raise RuntimeError("sim unavailable")
+        if name in FakeRemoteAPIClient.require_only_plugins:
+            raise RuntimeError(f"plugin must be accessed via require: {name}")
         if name in FakeRemoteAPIClient.missing_plugins:
             raise RuntimeError(f"missing plugin: {name}")
         return self.objects.get(name, object())
+
+    def require(self, name: str) -> object:
+        if name in FakeRemoteAPIClient.missing_plugins:
+            raise RuntimeError(f"missing plugin: {name}")
+        return self.objects[name]
 
 
 class TestSimConnection(unittest.TestCase):
@@ -57,6 +65,7 @@ class TestSimConnection(unittest.TestCase):
         FakeRemoteAPIClient.instances.clear()
         FakeRemoteAPIClient.fail_on_sim = False
         FakeRemoteAPIClient.missing_plugins = set()
+        FakeRemoteAPIClient.require_only_plugins = set()
 
     def test_connect_and_preload_plugins(self) -> None:
         conn = SimConnection(
@@ -83,6 +92,13 @@ class TestSimConnection(unittest.TestCase):
         self.assertIsNone(conn.simIK)
         with self.assertRaises(PluginUnavailableError):
             conn.get_plugin("simIK", required=True)
+
+    def test_plugin_resolution_prefers_require(self) -> None:
+        FakeRemoteAPIClient.require_only_plugins = {"simIK", "simOMPL"}
+        conn = SimConnection(client_factory=FakeRemoteAPIClient, auto_connect=True)
+
+        self.assertIsNotNone(conn.simIK)
+        self.assertIsNotNone(conn.simOMPL)
 
     def test_reconnect_creates_new_client(self) -> None:
         conn = SimConnection(client_factory=FakeRemoteAPIClient, auto_connect=True)

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
-from ..core.connection import get_sim
+from ..core.connection import get_connection, get_sim
 from ..core.exceptions import ToolValidationError
 from .schemas import (
+    GetPluginStatusInput,
     GetSimulationStateInput,
     PauseSimulationInput,
     StartSimulationInput,
@@ -55,6 +56,44 @@ def get_simulation_state() -> dict[str, int | str | bool]:
 
     sim = get_sim()
     return _state_payload(sim)
+
+
+def get_plugin_status(
+    plugin_names: list[str] | None = None,
+    refresh: bool = False,
+) -> dict[str, object]:
+    """Read availability of simulator-side plugin namespaces such as simIK."""
+    try:
+        payload = GetPluginStatusInput.model_validate(
+            {
+                "plugin_names": plugin_names if plugin_names is not None else ["simIK", "simOMPL"],
+                "refresh": refresh,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    connection = get_connection()
+    if payload.refresh:
+        connection.reconnect()
+
+    plugins: dict[str, dict[str, object]] = {}
+    for name in payload.plugin_names:
+        plugin = connection.get_plugin(name, required=False)
+        plugins[name] = {
+            "available": plugin is not None,
+            "kind": "simulator_plugin",
+        }
+
+    return {
+        "host": connection.host,
+        "port": connection.port,
+        "plugins": plugins,
+        "notes": {
+            "simulator_side": "plugin availability depends on the running CoppeliaSim instance, not the project venv",
+            "python_wrapper_error": "pythonWrapperV2.lua/pyzmq/cbor2 errors refer to simulator-side Python script execution, not simIK",
+        },
+    }
 
 
 def start_simulation() -> dict[str, int | str | bool]:

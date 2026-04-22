@@ -22,6 +22,8 @@ uv run coppelia-toolcli --help
 uv run coppelia-toolcli list
 uv run coppelia-toolcli show load_model
 uv run coppelia-toolcli call find_objects --payload '{"name_query":"jar","include_types":["shape"]}'
+uv run coppelia-toolcli call get_plugin_status
+uv run coppelia-toolcli call get_relative_pose --payload '{"source_handle":45,"target_handle":20}'
 python skills/toolcli.py list
 ```
 
@@ -30,11 +32,14 @@ python skills/toolcli.py list
 场景与对象：
 
 - `get_simulation_state`
+- `get_plugin_status`
 - `start_simulation`
 - `pause_simulation`
 - `stop_simulation`
 - `get_scene_graph`
 - `find_objects`
+- `get_object_pose`
+- `get_relative_pose`
 - `check_collision`
 - `spawn_primitive`
 - `spawn_cuboid`
@@ -82,5 +87,6 @@ python skills/toolcli.py list
 - 每个工具的参数定义来自 `agent/tool_registry.py` 中绑定的 Pydantic `input_model`
 - 精确参数请用 `show` 查看，不要靠猜
 - `call` 会真实调用底层工具；如果当前没有连上 CoppeliaSim，对需要仿真连接的工具会直接报错
+- `get_plugin_status` 用来区分 simulator 侧插件问题（如 `simIK`）与 Python wrapper / `pyzmq` / `cbor2` 问题
 - 涉及动力学运动时，先用 `get_simulation_state` 检查是否为 running；若未运行，先调用 `start_simulation`
 - `start_simulation`、`pause_simulation`、`stop_simulation` 返回时可能还是过渡态；调用后要再执行一次 `get_simulation_state`，确认最终稳态

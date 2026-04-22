@@ -41,8 +41,14 @@ from ..tools.primitives import (
     spawn_cuboid,
     spawn_primitive,
 )
-from ..tools.scene import check_collision, find_objects, get_scene_graph
-from ..tools.simulation import get_simulation_state, pause_simulation, start_simulation, stop_simulation
+from ..tools.scene import check_collision, find_objects, get_object_pose, get_relative_pose, get_scene_graph
+from ..tools.simulation import (
+    get_plugin_status,
+    get_simulation_state,
+    pause_simulation,
+    start_simulation,
+    stop_simulation,
+)
 from ..tools.schemas import (
     ActuateGripperInput,
     ActuateYouBotGripperInput,
@@ -51,10 +57,13 @@ from ..tools.schemas import (
     DriveYouBotBaseInput,
     DuplicateObjectInput,
     FindObjectsInput,
+    GetObjectPoseInput,
+    GetPluginStatusInput,
     GetJointDynCtrlModeInput,
     GetJointForceInput,
     GetJointModeInput,
     GetJointPositionInput,
+    GetRelativePoseInput,
     GetSceneGraphInput,
     GetSimulationStateInput,
     GetJointTargetForceInput,
@@ -116,6 +125,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         input_model=GetSimulationStateInput,
         handler=get_simulation_state,
     ),
+    "get_plugin_status": ToolDefinition(
+        name="get_plugin_status",
+        description="Read availability of simulator-side plugin namespaces such as simIK/simOMPL.",
+        input_model=GetPluginStatusInput,
+        handler=get_plugin_status,
+    ),
     "start_simulation": ToolDefinition(
         name="start_simulation",
         description="Start or resume CoppeliaSim simulation execution.",
@@ -145,6 +160,18 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Find scene objects by name query and object type filters.",
         input_model=FindObjectsInput,
         handler=find_objects,
+    ),
+    "get_object_pose": ToolDefinition(
+        name="get_object_pose",
+        description="Read one object's pose in world or another reference frame.",
+        input_model=GetObjectPoseInput,
+        handler=get_object_pose,
+    ),
+    "get_relative_pose": ToolDefinition(
+        name="get_relative_pose",
+        description="Read target pose expressed in source object's reference frame.",
+        input_model=GetRelativePoseInput,
+        handler=get_relative_pose,
     ),
     "check_collision": ToolDefinition(
         name="check_collision",

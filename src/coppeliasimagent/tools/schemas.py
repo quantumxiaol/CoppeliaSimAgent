@@ -306,6 +306,18 @@ class FindObjectsInput(ToolInputModel):
         return text
 
 
+class GetObjectPoseInput(ToolInputModel):
+    handle: int
+    relative_to: int = -1
+    round_digits: int = Field(default=3, ge=0, le=8)
+
+
+class GetRelativePoseInput(ToolInputModel):
+    source_handle: int
+    target_handle: int
+    round_digits: int = Field(default=3, ge=0, le=8)
+
+
 class CheckCollisionInput(ToolInputModel):
     entity1: int
     entity2: int
@@ -313,6 +325,24 @@ class CheckCollisionInput(ToolInputModel):
 
 class GetSimulationStateInput(EmptyToolInput):
     pass
+
+
+class GetPluginStatusInput(ToolInputModel):
+    plugin_names: list[str] = Field(default_factory=lambda: ["simIK", "simOMPL"])
+    refresh: bool = False
+
+    @field_validator("plugin_names")
+    @classmethod
+    def validate_plugin_names(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("plugin_names cannot be empty")
+        normalized: list[str] = []
+        for item in value:
+            text = str(item).strip()
+            if not text:
+                raise ValueError("plugin_names cannot contain blank entries")
+            normalized.append(text)
+        return normalized
 
 
 class StartSimulationInput(EmptyToolInput):

@@ -8,7 +8,13 @@ from pydantic import ValidationError
 
 from ..core.connection import get_sim
 from ..core.exceptions import CollisionDetectedError, ToolValidationError
-from .schemas import CheckCollisionInput, FindObjectsInput, GetSceneGraphInput
+from .schemas import (
+    CheckCollisionInput,
+    FindObjectsInput,
+    GetObjectPoseInput,
+    GetRelativePoseInput,
+    GetSceneGraphInput,
+)
 
 _OBJECT_TYPE_ATTRS = {
     "shape": "object_shape_type",
@@ -64,6 +70,14 @@ def _get_object_type(sim: object, handle: int) -> int:
     raise RuntimeError("Cannot resolve object type from current CoppeliaSim API")
 
 
+def _round_position(values: list[float], round_digits: int) -> list[float]:
+    return [round(float(v), round_digits) for v in values]
+
+
+def _round_orientation_deg(values: list[float], round_digits: int) -> list[float]:
+    return [round(math.degrees(float(v)), round_digits) for v in values]
+
+
 def get_scene_graph(
     include_types: list[str] | None = None,
     round_digits: int = 3,
@@ -103,9 +117,8 @@ def get_scene_graph(
             continue
 
         name = _safe_get_object_name(sim, handle)
-        position = [round(float(v), payload.round_digits) for v in sim.getObjectPosition(handle, -1)]
-        orientation_rad = sim.getObjectOrientation(handle, -1)
-        orientation_deg = [round(math.degrees(float(v)), payload.round_digits) for v in orientation_rad]
+        position = _round_position(sim.getObjectPosition(handle, -1), payload.round_digits)
+        orientation_deg = _round_orientation_deg(sim.getObjectOrientation(handle, -1), payload.round_digits)
 
         key = name if name not in scene_state else f"{name}#{handle}"
         scene_state[key] = {
@@ -164,9 +177,8 @@ def find_objects(
             elif query not in name_lower:
                 continue
 
-        position = [round(float(v), payload.round_digits) for v in sim.getObjectPosition(handle, -1)]
-        orientation_rad = sim.getObjectOrientation(handle, -1)
-        orientation_deg = [round(math.degrees(float(v)), payload.round_digits) for v in orientation_rad]
+        position = _round_position(sim.getObjectPosition(handle, -1), payload.round_digits)
+        orientation_deg = _round_orientation_deg(sim.getObjectOrientation(handle, -1), payload.round_digits)
 
         matched.append(
             {
@@ -181,6 +193,68 @@ def find_objects(
             break
 
     return matched
+
+
+def get_object_pose(
+    handle: int,
+    relative_to: int = -1,
+    round_digits: int = 3,
+) -> dict[str, object]:
+    """Read one object's pose in a specific reference frame."""
+    try:
+        payload = GetObjectPoseInput.model_validate(
+            {
+                "handle": handle,
+                "relative_to": relative_to,
+                "round_digits": round_digits,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    return {
+        "handle": int(payload.handle),
+        "relative_to": int(payload.relative_to),
+        "name": _safe_get_object_name(sim, payload.handle),
+        "type": _get_object_type(sim, payload.handle),
+        "position": _round_position(sim.getObjectPosition(payload.handle, payload.relative_to), payload.round_digits),
+        "orientation_deg": _round_orientation_deg(
+            sim.getObjectOrientation(payload.handle, payload.relative_to),
+            payload.round_digits,
+        ),
+    }
+
+
+def get_relative_pose(
+    source_handle: int,
+    target_handle: int,
+    round_digits: int = 3,
+) -> dict[str, object]:
+    """Read target pose expressed in source object's reference frame."""
+    try:
+        payload = GetRelativePoseInput.model_validate(
+            {
+                "source_handle": source_handle,
+                "target_handle": target_handle,
+                "round_digits": round_digits,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    position_raw = [float(v) for v in sim.getObjectPosition(payload.target_handle, payload.source_handle)]
+    orientation_raw = [float(v) for v in sim.getObjectOrientation(payload.target_handle, payload.source_handle)]
+    return {
+        "source_handle": int(payload.source_handle),
+        "source_name": _safe_get_object_name(sim, payload.source_handle),
+        "target_handle": int(payload.target_handle),
+        "target_name": _safe_get_object_name(sim, payload.target_handle),
+        "position": _round_position(position_raw, payload.round_digits),
+        "orientation_deg": _round_orientation_deg(orientation_raw, payload.round_digits),
+        "distance": round(math.sqrt(sum(v * v for v in position_raw)), payload.round_digits),
+    }
 
 
 def check_collision(entity1: int, entity2: int) -> bool:

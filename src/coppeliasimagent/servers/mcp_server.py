@@ -41,8 +41,14 @@ from ..tools.primitives import (
     spawn_cuboid,
     spawn_primitive,
 )
-from ..tools.scene import check_collision, find_objects, get_scene_graph
-from ..tools.simulation import get_simulation_state, pause_simulation, start_simulation, stop_simulation
+from ..tools.scene import check_collision, find_objects, get_object_pose, get_relative_pose, get_scene_graph
+from ..tools.simulation import (
+    get_plugin_status,
+    get_simulation_state,
+    pause_simulation,
+    start_simulation,
+    stop_simulation,
+)
 
 
 def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool = False) -> FastMCP:
@@ -74,6 +80,13 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
     def get_simulation_state_tool() -> dict[str, int | str | bool]:
         return get_simulation_state()
 
+    @mcp.tool(name="get_plugin_status", description="Read simulator-side plugin availability.")
+    def get_plugin_status_tool(
+        plugin_names: list[str] | None = None,
+        refresh: bool = False,
+    ) -> dict[str, object]:
+        return get_plugin_status(plugin_names=plugin_names, refresh=refresh)
+
     @mcp.tool(name="start_simulation", description="Start or resume simulation execution.")
     def start_simulation_tool() -> dict[str, int | str | bool]:
         return start_simulation()
@@ -102,6 +115,26 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             limit=limit,
         )
         return {"count": len(items), "items": items}
+
+    @mcp.tool(name="get_object_pose", description="Read one object's pose in a reference frame.")
+    def get_object_pose_tool(
+        handle: int,
+        relative_to: int = -1,
+        round_digits: int = 3,
+    ) -> dict[str, object]:
+        return get_object_pose(handle=handle, relative_to=relative_to, round_digits=round_digits)
+
+    @mcp.tool(name="get_relative_pose", description="Read target pose expressed in source object's frame.")
+    def get_relative_pose_tool(
+        source_handle: int,
+        target_handle: int,
+        round_digits: int = 3,
+    ) -> dict[str, object]:
+        return get_relative_pose(
+            source_handle=source_handle,
+            target_handle=target_handle,
+            round_digits=round_digits,
+        )
 
     @mcp.tool(name="check_collision", description="Check collision between two entities.")
     def check_collision_tool(entity1: int, entity2: int) -> dict[str, object]:

@@ -184,6 +184,8 @@ uv run coppelia-toolcli --help
 uv run coppelia-toolcli list
 uv run coppelia-toolcli show load_model
 uv run coppelia-toolcli call find_objects --payload '{"name_query":"jar","include_types":["shape"]}'
+uv run coppelia-toolcli call get_plugin_status
+uv run coppelia-toolcli call get_relative_pose --payload '{"source_handle":45,"target_handle":20}'
 ```
 
 也可以直接从 `skills/` 下运行包装脚本：
@@ -197,6 +199,8 @@ python skills/toolcli.py --help
 - 查看当前有哪些工具
 - 查看某个工具的参数 schema
 - 以 JSON payload 直接调用工具
+- 快速诊断 `simIK` / `simOMPL` 这类 simulator 侧插件是否可用
+- 直接读取单个对象位姿，或“末端相对目标”的位姿差
 
 仿真生命周期也已经纳入工具集；对于依赖动力学的运动，先检查或启动仿真：
 
@@ -316,7 +320,17 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 
 - `get_scene_graph(include_types, round_digits)`
 - `find_objects(name_query, exact_name, include_types, round_digits, limit)`
+- `get_object_pose(handle, relative_to, round_digits)`
+- `get_relative_pose(source_handle, target_handle, round_digits)`
 - `check_collision(entity1, entity2)`
+
+### 仿真与插件诊断
+
+- `get_simulation_state()`
+- `get_plugin_status(plugin_names, refresh)`
+- `start_simulation()`
+- `pause_simulation()`
+- `stop_simulation()`
 
 ### 基础几何体
 
@@ -358,6 +372,23 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 - `move_ik_target(environment_handle, group_handle, target_handle, position, relative_to, steps)`
 - `actuate_gripper(signal_name, closed)`
 - `actuate_youbot_gripper(robot_path, closed, command_mode, joint1_open, joint1_closed, joint2_open, joint2_closed, motion_params)`
+
+## IK 与 Python Wrapper 排查
+
+- `setup_ik_link` / `move_ik_target` 已经实现；如果执行时报 `PluginUnavailableError: Plugin 'simIK' is unavailable`，优先说明当前运行中的 CoppeliaSim 实例没有暴露 `simIK`，不是项目 venv 缺 Python 包。
+- 可以先直接调用下面两个命令确认：
+
+```bash
+uv run coppelia-toolcli call get_plugin_status
+uv run coppelia-toolcli call get_plugin_status --payload '{"refresh":true}'
+```
+
+- `pythonWrapperV2.lua` / `pyzmq` / `cbor2` 日志是另一类问题。它指向 simulator 侧 Python 脚本包装器或解释器配置，不等同于 `simIK` 缺失。
+- 如果你看到：
+  - `sandboxScript:error ... The Python interpreter could not handle the wrapper script ...`
+  - `Make sure that the Python modules 'cbor2' and 'zmq' are properly installed ...`
+  这通常需要检查 CoppeliaSim 使用的 Python 解释器、对应解释器里是否安装了 `pyzmq` / `cbor2`，以及 `usrset.txt` 中 `defaultPython` 的配置。
+- 当前仓库的外部控制链路使用 ZeroMQ Remote API。只要 simulator 侧插件已启用，外部客户端就可以访问 `sim.*` 和插件命名空间，例如 `simIK.*`、`simOMPL.*`。
 
 ## youBot 控制说明
 

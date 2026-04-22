@@ -34,8 +34,21 @@ from .primitives import (
     spawn_cuboid,
     spawn_primitive,
 )
-from .scene import assert_no_collision, check_collision, find_objects, get_scene_graph
-from .simulation import get_simulation_state, pause_simulation, start_simulation, stop_simulation
+from .scene import (
+    assert_no_collision,
+    check_collision,
+    find_objects,
+    get_object_pose,
+    get_relative_pose,
+    get_scene_graph,
+)
+from .simulation import (
+    get_plugin_status,
+    get_simulation_state,
+    pause_simulation,
+    start_simulation,
+    stop_simulation,
+)
 
 __all__ = [
     "actuate_gripper",
@@ -49,7 +62,10 @@ __all__ = [
     "get_joint_dyn_ctrl_mode",
     "get_joint_force",
     "get_joint_mode",
+    "get_object_pose",
+    "get_plugin_status",
     "get_joint_position",
+    "get_relative_pose",
     "get_scene_graph",
     "get_simulation_state",
     "get_joint_target_force",

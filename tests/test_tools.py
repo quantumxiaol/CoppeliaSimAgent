@@ -374,10 +374,18 @@ class FakeSim:
         self.object_names[handle] = alias
 
     def getObjectPosition(self, handle: int, relative_to: int) -> list[float]:  # noqa: N802
-        return self.object_positions[handle]
+        if relative_to in (-1, self.handle_scene):
+            return list(self.object_positions[handle])
+        ref = self.object_positions[relative_to]
+        cur = self.object_positions[handle]
+        return [float(cur[i]) - float(ref[i]) for i in range(3)]
 
     def getObjectOrientation(self, handle: int, relative_to: int) -> list[float]:  # noqa: N802
-        return self.object_orientations[handle]
+        if relative_to in (-1, self.handle_scene):
+            return list(self.object_orientations[handle])
+        ref = self.object_orientations[relative_to]
+        cur = self.object_orientations[handle]
+        return [float(cur[i]) - float(ref[i]) for i in range(3)]
 
     def getObjectParent(self, handle: int) -> int:  # noqa: N802
         return self.object_parents.get(handle, -1)
@@ -569,6 +577,44 @@ class TestTools(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["name"], "shape_a")
         self.assertEqual(items[0]["handle"], 1)
+
+    def test_object_pose_and_relative_pose(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.scene.get_sim", return_value=sim):
+            pose = scene.get_object_pose(handle=1, round_digits=3)
+            relative = scene.get_relative_pose(source_handle=2, target_handle=1, round_digits=3)
+
+        self.assertEqual(pose["name"], "shape_a")
+        self.assertEqual(pose["position"], [0.123, 1.0, 2.0])
+        self.assertEqual(relative["source_name"], "dummy_a")
+        self.assertEqual(relative["target_name"], "shape_a")
+        self.assertEqual(relative["position"], [0.123, 1.0, 1.8])
+        self.assertEqual(relative["distance"], 2.063)
+
+    def test_plugin_status(self) -> None:
+        class FakeConnection:
+            host = "127.0.0.1"
+            port = 23000
+
+            def __init__(self) -> None:
+                self.refreshed = False
+
+            def reconnect(self) -> "FakeConnection":
+                self.refreshed = True
+                return self
+
+            def get_plugin(self, name: str, *, required: bool = False) -> object | None:
+                plugins = {"simIK": None, "simOMPL": object()}
+                return plugins[name]
+
+        conn = FakeConnection()
+        with patch("coppeliasimagent.tools.simulation.get_connection", return_value=conn):
+            out = simulation.get_plugin_status(refresh=True)
+
+        self.assertTrue(conn.refreshed)
+        self.assertEqual(out["host"], "127.0.0.1")
+        self.assertFalse(out["plugins"]["simIK"]["available"])
+        self.assertTrue(out["plugins"]["simOMPL"]["available"])
 
     def test_simulation_lifecycle_tools(self) -> None:
         sim = FakeSim()

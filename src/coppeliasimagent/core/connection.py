@@ -41,6 +41,24 @@ class SimConnection:
         if auto_connect:
             self.connect()
 
+    def _resolve_plugin(self, client: Any, plugin_name: str) -> Any | None:
+        """Resolve a plugin namespace from the remote API client.
+
+        Prefer `require(...)` when available, which is the canonical way to
+        access plugin namespaces with the ZeroMQ Remote API. Fall back to
+        `getObject(...)` for compatibility with older client variants.
+        """
+        if hasattr(client, "require"):
+            try:
+                return client.require(plugin_name)
+            except Exception:
+                pass
+
+        try:
+            return client.getObject(plugin_name)
+        except Exception:
+            return None
+
     def connect(self, force: bool = False) -> "SimConnection":
         """Connect to CoppeliaSim and preload frequently used plugins."""
         with self._lock:
@@ -67,11 +85,7 @@ class SimConnection:
             self._plugins = {}
 
             for plugin_name in self.preload_plugins:
-                try:
-                    self._plugins[plugin_name] = client.getObject(plugin_name)
-                except Exception:  # noqa: BLE001
-                    # Optional plugin: keep None so callers can decide whether to fail.
-                    self._plugins[plugin_name] = None
+                self._plugins[plugin_name] = self._resolve_plugin(client, plugin_name)
 
             return self
 
@@ -97,10 +111,7 @@ class SimConnection:
         """Return a preloaded plugin object by name, optionally enforcing presence."""
         self.ensure_connected()
         if name not in self._plugins:
-            try:
-                self._plugins[name] = self.client.getObject(name)
-            except Exception:  # noqa: BLE001
-                self._plugins[name] = None
+            self._plugins[name] = self._resolve_plugin(self.client, name)
 
         plugin = self._plugins[name]
         if required and plugin is None:
