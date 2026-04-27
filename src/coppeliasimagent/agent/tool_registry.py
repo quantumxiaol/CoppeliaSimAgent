@@ -14,6 +14,7 @@ from ..tools.kinematics import (
     actuate_youbot_gripper,
     configure_abb_arm_drive,
     drive_youbot_base,
+    find_robot_joints,
     get_joint_dyn_ctrl_mode,
     get_joint_force,
     get_joint_mode,
@@ -30,16 +31,19 @@ from ..tools.kinematics import (
     set_youbot_wheel_velocities,
     stop_youbot_base,
     setup_ik_link,
+    setup_abb_arm_ik,
     setup_youbot_arm_ik,
     spawn_waypoint,
 )
 from ..tools.models import load_model, set_parent_child
 from ..tools.point_cloud import (
     create_point_cloud_surface_from_shape,
+    create_point_cloud_pottery_cylinder,
     execute_polishing_path,
     get_point_cloud_stats,
     insert_points_into_point_cloud,
     remove_points_near_tool,
+    simulate_polishing_contact,
     simulate_polishing_step,
 )
 from ..tools.primitives import (
@@ -48,6 +52,7 @@ from ..tools.primitives import (
     rename_object,
     set_object_color,
     set_object_pose,
+    set_object_visibility,
     spawn_cuboid,
     spawn_primitive,
 )
@@ -75,6 +80,7 @@ from ..tools.schemas import (
     CheckCollisionInput,
     CheckCollisionMonitorInput,
     ConfigureAbbArmDriveInput,
+    CreatePointCloudPotteryCylinderInput,
     CreatePointCloudSurfaceFromShapeInput,
     DetachObjectInput,
     DriveYouBotBaseInput,
@@ -82,6 +88,7 @@ from ..tools.schemas import (
     ExecuteCartesianWaypointsInput,
     ExecuteJointTrajectoryInput,
     ExecutePolishingPathInput,
+    FindRobotJointsInput,
     FindObjectsInput,
     GetVisionSensorImageInput,
     GetObjectVelocityInput,
@@ -110,6 +117,7 @@ from ..tools.schemas import (
     ResetDynamicObjectInput,
     SetObjectColorInput,
     SetObjectPoseInput,
+    SetObjectVisibilityInput,
     SetShapeDynamicsInput,
     SetJointDynCtrlModeInput,
     SetJointModeInput,
@@ -119,12 +127,14 @@ from ..tools.schemas import (
     SetJointTargetVelocityInput,
     SetParentChildInput,
     SetYouBotBaseLockedInput,
+    SimulatePolishingContactInput,
     SimulatePolishingStepInput,
     StepSimulationInput,
     StartSimulationInput,
     StopYouBotBaseInput,
     StopSimulationInput,
     SetYouBotWheelVelocitiesInput,
+    SetupAbbArmIKInput,
     SetupIKLinkInput,
     SetupYouBotArmIKInput,
     SpawnCuboidInput,
@@ -297,6 +307,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         input_model=SetObjectColorInput,
         handler=set_object_color,
     ),
+    "set_object_visibility": ToolDefinition(
+        name="set_object_visibility",
+        description="Show or hide an object, optionally including descendants.",
+        input_model=SetObjectVisibilityInput,
+        handler=set_object_visibility,
+    ),
     "load_model": ToolDefinition(
         name="load_model",
         description="Load a .ttm model and place it in the scene.",
@@ -429,6 +445,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         input_model=ConfigureAbbArmDriveInput,
         handler=configure_abb_arm_drive,
     ),
+    "find_robot_joints": ToolDefinition(
+        name="find_robot_joints",
+        description="Find joint handles below a robot model path in tree order.",
+        input_model=FindRobotJointsInput,
+        handler=find_robot_joints,
+    ),
     "setup_ik_link": ToolDefinition(
         name="setup_ik_link",
         description="Create IK environment/group and bind base-tip-target chain.",
@@ -440,6 +462,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Create/reuse youBot arm tip-target dummies and bind an IK chain.",
         input_model=SetupYouBotArmIKInput,
         handler=setup_youbot_arm_ik,
+    ),
+    "setup_abb_arm_ik": ToolDefinition(
+        name="setup_abb_arm_ik",
+        description="Set up ABB IRB4600 IK using the model's existing IkTip/IkTarget dummies and optionally verify tip motion.",
+        input_model=SetupAbbArmIKInput,
+        handler=setup_abb_arm_ik,
     ),
     "move_ik_target": ToolDefinition(
         name="move_ik_target",
@@ -539,9 +567,15 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
     ),
     "create_point_cloud_surface_from_shape": ToolDefinition(
         name="create_point_cloud_surface_from_shape",
-        description="Create a point-cloud surface sampled from a shape.",
+        description="Create a point-cloud surface sampled from a shape, optionally hiding/removing the source shape.",
         input_model=CreatePointCloudSurfaceFromShapeInput,
         handler=create_point_cloud_surface_from_shape,
+    ),
+    "create_point_cloud_pottery_cylinder": ToolDefinition(
+        name="create_point_cloud_pottery_cylinder",
+        description="Create a point-cloud cylinder pottery surface without leaving the source mesh visible by default.",
+        input_model=CreatePointCloudPotteryCylinderInput,
+        handler=create_point_cloud_pottery_cylinder,
     ),
     "insert_points_into_point_cloud": ToolDefinition(
         name="insert_points_into_point_cloud",
@@ -566,6 +600,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Remove point-cloud surface points near the polishing tool.",
         input_model=SimulatePolishingStepInput,
         handler=simulate_polishing_step,
+    ),
+    "simulate_polishing_contact": ToolDefinition(
+        name="simulate_polishing_contact",
+        description="Remove point-cloud surface points around an explicit contact position.",
+        input_model=SimulatePolishingContactInput,
+        handler=simulate_polishing_contact,
     ),
     "execute_polishing_path": ToolDefinition(
         name="execute_polishing_path",

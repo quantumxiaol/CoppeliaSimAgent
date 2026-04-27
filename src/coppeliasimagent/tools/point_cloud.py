@@ -11,12 +11,15 @@ from ..core.exceptions import ToolValidationError
 from .kinematics import move_ik_target
 from .schemas import (
     CreatePointCloudSurfaceFromShapeInput,
+    CreatePointCloudPotteryCylinderInput,
     ExecutePolishingPathInput,
     GetPointCloudStatsInput,
     InsertPointsIntoPointCloudInput,
     RemovePointsNearToolInput,
+    SimulatePolishingContactInput,
     SimulatePolishingStepInput,
 )
+from .primitives import remove_object, rename_object, set_object_visibility, spawn_primitive
 
 _POINT_CLOUD_COUNTS: dict[int, int] = {}
 
@@ -40,6 +43,8 @@ def create_point_cloud_surface_from_shape(
     grid_size: float = 0.02,
     point_size: float = 0.01,
     color: list[float] | None = None,
+    hide_source_shape: bool = False,
+    remove_source_shape: bool = False,
 ) -> dict[str, object]:
     """Create an OC-tree backed point cloud by sampling a shape."""
     try:
@@ -49,6 +54,8 @@ def create_point_cloud_surface_from_shape(
                 "grid_size": grid_size,
                 "point_size": point_size,
                 "color": color if color is not None else [0.8, 0.8, 0.8],
+                "hide_source_shape": hide_source_shape,
+                "remove_source_shape": remove_source_shape,
             }
         )
     except ValidationError as exc:
@@ -69,12 +76,21 @@ def create_point_cloud_surface_from_shape(
         )
     )
     _POINT_CLOUD_COUNTS[pc_handle] = total
+    source_action = "kept"
+    if payload.remove_source_shape:
+        remove_object(payload.shape_handle)
+        source_action = "removed"
+    elif payload.hide_source_shape:
+        set_object_visibility(payload.shape_handle, visible=False, include_descendants=False)
+        source_action = "hidden"
+
     return {
         "point_cloud_handle": pc_handle,
         "shape_handle": payload.shape_handle,
         "grid_size": payload.grid_size,
         "point_size": payload.point_size,
         "point_count": total,
+        "source_shape_action": source_action,
     }
 
 
@@ -176,6 +192,61 @@ def get_point_cloud_stats(point_cloud_handle: int) -> dict[str, object]:
     }
 
 
+def create_point_cloud_pottery_cylinder(
+    radius: float = 0.11,
+    height: float = 0.45,
+    center: list[float] | None = None,
+    grid_size: float = 0.015,
+    point_size: float = 0.008,
+    color: list[float] | None = None,
+    alias: str = "point_cloud_pottery_cylinder",
+    keep_source_shape: bool = False,
+) -> dict[str, object]:
+    """Create a point-cloud cylinder and hide/remove its source mesh by default."""
+    try:
+        payload = CreatePointCloudPotteryCylinderInput.model_validate(
+            {
+                "radius": radius,
+                "height": height,
+                "center": center if center is not None else [0.55, 0.0, 0.225],
+                "grid_size": grid_size,
+                "point_size": point_size,
+                "color": color if color is not None else [0.9, 0.65, 0.35],
+                "alias": alias,
+                "keep_source_shape": keep_source_shape,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    source_handle = spawn_primitive(
+        primitive="cylinder",
+        size=[payload.radius * 2.0, payload.radius * 2.0, payload.height],
+        position=payload.center,
+        color=payload.color,
+        dynamic=False,
+    )
+    rename_object(source_handle, f"{payload.alias}_source")
+    cloud = create_point_cloud_surface_from_shape(
+        shape_handle=source_handle,
+        grid_size=payload.grid_size,
+        point_size=payload.point_size,
+        color=payload.color,
+        remove_source_shape=not payload.keep_source_shape,
+    )
+    cloud.update(
+        {
+            "alias": payload.alias,
+            "radius": payload.radius,
+            "height": payload.height,
+            "center": payload.center,
+            "source_shape_handle": source_handle,
+            "source_shape_kept": payload.keep_source_shape,
+        }
+    )
+    return cloud
+
+
 def simulate_polishing_step(
     tool_handle: int,
     surface_cloud_handle: int,
@@ -201,6 +272,49 @@ def simulate_polishing_step(
         radius=payload.contact_radius,
         tolerance=payload.removal_depth,
     )
+
+
+def simulate_polishing_contact(
+    surface_cloud_handle: int,
+    tool_position: list[float],
+    contact_radius: float,
+    removal_depth: float = 0.0,
+) -> dict[str, object]:
+    """Remove surface points around an explicit contact position."""
+    try:
+        payload = SimulatePolishingContactInput.model_validate(
+            {
+                "surface_cloud_handle": surface_cloud_handle,
+                "tool_position": tool_position,
+                "contact_radius": contact_radius,
+                "removal_depth": removal_depth,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    if not hasattr(sim, "removePointsFromPointCloud"):
+        raise RuntimeError("Current CoppeliaSim API does not expose removePointsFromPointCloud")
+
+    total = int(
+        sim.removePointsFromPointCloud(
+            payload.surface_cloud_handle,
+            0,
+            payload.tool_position,
+            payload.contact_radius + payload.removal_depth,
+        )
+    )
+    previous = _POINT_CLOUD_COUNTS.get(payload.surface_cloud_handle)
+    _POINT_CLOUD_COUNTS[payload.surface_cloud_handle] = total
+    return {
+        "point_cloud_handle": payload.surface_cloud_handle,
+        "tool_position": payload.tool_position,
+        "radius": payload.contact_radius,
+        "tolerance": payload.removal_depth,
+        "point_count": total,
+        "removed_estimate": None if previous is None else max(0, previous - total),
+    }
 
 
 def execute_polishing_path(

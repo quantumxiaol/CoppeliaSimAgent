@@ -14,6 +14,7 @@ from ..tools.kinematics import (
     actuate_youbot_gripper,
     configure_abb_arm_drive,
     drive_youbot_base,
+    find_robot_joints,
     get_joint_dyn_ctrl_mode,
     get_joint_force,
     get_joint_mode,
@@ -29,17 +30,20 @@ from ..tools.kinematics import (
     set_youbot_base_locked,
     set_youbot_wheel_velocities,
     stop_youbot_base,
+    setup_abb_arm_ik,
     setup_ik_link,
     setup_youbot_arm_ik,
     spawn_waypoint,
 )
 from ..tools.models import load_model, set_parent_child
 from ..tools.point_cloud import (
+    create_point_cloud_pottery_cylinder,
     create_point_cloud_surface_from_shape,
     execute_polishing_path,
     get_point_cloud_stats,
     insert_points_into_point_cloud,
     remove_points_near_tool,
+    simulate_polishing_contact,
     simulate_polishing_step,
 )
 from ..tools.primitives import (
@@ -48,6 +52,7 @@ from ..tools.primitives import (
     rename_object,
     set_object_color,
     set_object_pose,
+    set_object_visibility,
     spawn_cuboid,
     spawn_primitive,
 )
@@ -258,6 +263,18 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             "color_component": color_component,
         }
 
+    @mcp.tool(name="set_object_visibility", description="Show or hide an object, optionally including descendants.")
+    def set_object_visibility_tool(
+        handle: int,
+        visible: bool,
+        include_descendants: bool = False,
+    ) -> dict[str, Any]:
+        return set_object_visibility(
+            handle=handle,
+            visible=visible,
+            include_descendants=include_descendants,
+        )
+
     @mcp.tool(name="load_model", description="Load a .ttm model and place it.")
     def load_model_tool(
         model_path: str,
@@ -447,6 +464,13 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             reset_dynamics=reset_dynamics,
         )
 
+    @mcp.tool(name="find_robot_joints", description="Find joint handles below a robot model path.")
+    def find_robot_joints_tool(
+        robot_path: str = "/IRB4600",
+        include_aux_joint: bool = False,
+    ) -> dict[str, Any]:
+        return find_robot_joints(robot_path=robot_path, include_aux_joint=include_aux_joint)
+
     @mcp.tool(name="setup_ik_link", description="Set up IK chain base-tip-target.")
     def setup_ik_link_tool(
         base_handle: int,
@@ -483,6 +507,28 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             target_offset=target_offset,
             constraints_mask=constraints_mask,
             reuse_existing=reuse_existing,
+        )
+
+    @mcp.tool(name="setup_abb_arm_ik", description="Set up ABB IRB4600 IK and optionally verify tip motion.")
+    def setup_abb_arm_ik_tool(
+        robot_path: str = "/IRB4600",
+        base_path: str | None = None,
+        tip_path: str = "/IRB4600/IkTip",
+        target_path: str = "/IRB4600/IkTarget",
+        constraints_mask: int | None = None,
+        verify_motion: bool = True,
+        test_offset: list[float] | None = None,
+        restore_target: bool = True,
+    ) -> dict[str, Any]:
+        return setup_abb_arm_ik(
+            robot_path=robot_path,
+            base_path=base_path,
+            tip_path=tip_path,
+            target_path=target_path,
+            constraints_mask=constraints_mask,
+            verify_motion=verify_motion,
+            test_offset=test_offset,
+            restore_target=restore_target,
         )
 
     @mcp.tool(name="move_ik_target", description="Move IK target and solve IK.")
@@ -782,12 +828,38 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         grid_size: float = 0.02,
         point_size: float = 0.01,
         color: list[float] | None = None,
+        hide_source_shape: bool = False,
+        remove_source_shape: bool = False,
     ) -> dict[str, Any]:
         return create_point_cloud_surface_from_shape(
             shape_handle=shape_handle,
             grid_size=grid_size,
             point_size=point_size,
             color=color,
+            hide_source_shape=hide_source_shape,
+            remove_source_shape=remove_source_shape,
+        )
+
+    @mcp.tool(name="create_point_cloud_pottery_cylinder", description="Create a point-cloud pottery cylinder.")
+    def create_point_cloud_pottery_cylinder_tool(
+        radius: float = 0.11,
+        height: float = 0.45,
+        center: list[float] | None = None,
+        grid_size: float = 0.015,
+        point_size: float = 0.008,
+        color: list[float] | None = None,
+        alias: str = "point_cloud_pottery_cylinder",
+        keep_source_shape: bool = False,
+    ) -> dict[str, Any]:
+        return create_point_cloud_pottery_cylinder(
+            radius=radius,
+            height=height,
+            center=center,
+            grid_size=grid_size,
+            point_size=point_size,
+            color=color,
+            alias=alias,
+            keep_source_shape=keep_source_shape,
         )
 
     @mcp.tool(name="insert_points_into_point_cloud", description="Insert points into a point cloud.")
@@ -826,6 +898,20 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         return simulate_polishing_step(
             tool_handle=tool_handle,
             surface_cloud_handle=surface_cloud_handle,
+            contact_radius=contact_radius,
+            removal_depth=removal_depth,
+        )
+
+    @mcp.tool(name="simulate_polishing_contact", description="Remove point-cloud points around an explicit contact position.")
+    def simulate_polishing_contact_tool(
+        surface_cloud_handle: int,
+        tool_position: list[float],
+        contact_radius: float,
+        removal_depth: float = 0.0,
+    ) -> dict[str, Any]:
+        return simulate_polishing_contact(
+            surface_cloud_handle=surface_cloud_handle,
+            tool_position=tool_position,
             contact_radius=contact_radius,
             removal_depth=removal_depth,
         )

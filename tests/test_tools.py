@@ -40,6 +40,7 @@ class FakeSim:
     shapeintparam_static = 20
     shapeintparam_respondable = 21
     shapefloatparam_friction = 22
+    objintparam_visibility_layer = 23
     handleflag_model = 0x040000
 
     handle_scene = -2
@@ -319,9 +320,20 @@ class FakeSim:
 
     def removeObject(self, handle: int) -> None:  # noqa: N802
         self.calls.append(("removeObject", (handle,)))
+        self.object_names.pop(handle, None)
+        self.object_types.pop(handle, None)
+        self.object_positions.pop(handle, None)
+        self.object_orientations.pop(handle, None)
+        self.object_parents.pop(handle, None)
 
     def removeObjects(self, handles: list[int]) -> None:  # noqa: N802
         self.calls.append(("removeObjects", (handles,)))
+        for handle in handles:
+            self.object_names.pop(handle, None)
+            self.object_types.pop(handle, None)
+            self.object_positions.pop(handle, None)
+            self.object_orientations.pop(handle, None)
+            self.object_parents.pop(handle, None)
 
     def loadModel(self, model_path: str) -> int:  # noqa: N802
         self.calls.append(("loadModel", (model_path,)))
@@ -509,6 +521,11 @@ class FakeSim:
         self.calls.append(("createPointCloud", (max_voxel_size, max_pts_per_voxel, options, point_size)))
         handle = self.next_handle
         self.next_handle += 1
+        self.object_types[handle] = self.object_dummy_type
+        self.object_names[handle] = f"pointCloud#{handle}"
+        self.object_positions[handle] = [0.0, 0.0, 0.0]
+        self.object_orientations[handle] = [0.0, 0.0, 0.0]
+        self.object_parents[handle] = -1
         self.point_cloud_counts[handle] = 0
         return handle
 
@@ -977,6 +994,7 @@ class TestTools(unittest.TestCase):
             "coppeliasimagent.tools.sensors.get_sim", return_value=sim
         ), patch("coppeliasimagent.tools.scene.get_sim", return_value=sim), patch(
             "coppeliasimagent.tools.point_cloud.get_sim", return_value=sim
+        ), patch("coppeliasimagent.tools.primitives.get_sim", return_value=sim
         ):
             velocity = dynamics.get_object_velocity(1)
             dyn = dynamics.set_shape_dynamics(1, static=False, respondable=True, mass=2.5, friction=0.4)
@@ -988,11 +1006,28 @@ class TestTools(unittest.TestCase):
             image = sensors.get_vision_sensor_image(2)
             monitor = sensors.check_collision_monitor(1, 2)
             pc = point_cloud.create_point_cloud_surface_from_shape(1, grid_size=0.02, point_size=0.01)
+            hidden_pc = point_cloud.create_point_cloud_surface_from_shape(
+                5,
+                grid_size=0.02,
+                point_size=0.01,
+                hide_source_shape=True,
+            )
+            pottery = point_cloud.create_point_cloud_pottery_cylinder(
+                radius=0.1,
+                height=0.2,
+                center=[0.3, 0.0, 0.1],
+                keep_source_shape=False,
+            )
             inserted = point_cloud.insert_points_into_point_cloud(
                 pc["point_cloud_handle"],
                 [[0.0, 0.0, 0.0], [0.01, 0.0, 0.0]],
             )
             removed = point_cloud.simulate_polishing_step(2, pc["point_cloud_handle"], contact_radius=0.03)
+            contact = point_cloud.simulate_polishing_contact(
+                surface_cloud_handle=pc["point_cloud_handle"],
+                tool_position=[0.0, 0.0, 0.0],
+                contact_radius=0.03,
+            )
             stats = point_cloud.get_point_cloud_stats(pc["point_cloud_handle"])
 
         self.assertAlmostEqual(velocity["linear_speed"], math.sqrt(0.0005))
@@ -1005,9 +1040,46 @@ class TestTools(unittest.TestCase):
         self.assertEqual(image["resolution"], [2, 1])
         self.assertTrue(monitor["ever_collided"])
         self.assertEqual(pc["point_count"], 10)
+        self.assertEqual(hidden_pc["source_shape_action"], "hidden")
+        self.assertEqual(sim.object_int_params[(5, sim.objintparam_visibility_layer)], 0)
+        self.assertEqual(pottery["source_shape_action"], "removed")
+        self.assertNotIn(pottery["source_shape_handle"], sim.object_names)
         self.assertEqual(inserted["inserted_points"], 2)
         self.assertLess(removed["point_count"], inserted["point_count"])
-        self.assertEqual(stats["known_point_count"], removed["point_count"])
+        self.assertLess(contact["point_count"], removed["point_count"])
+        self.assertEqual(stats["known_point_count"], contact["point_count"])
+
+    def test_robot_joint_discovery_and_abb_ik_setup(self) -> None:
+        sim = FakeSim()
+        sim.object_types[38] = sim.object_dummy_type
+        sim.object_names[38] = "IkTip"
+        sim.object_positions[38] = [0.8, 0.0, 0.8]
+        sim.object_orientations[38] = [0.0, 0.0, 0.0]
+        sim.object_parents[38] = 36
+        sim.object_types[39] = sim.object_dummy_type
+        sim.object_names[39] = "IkTarget"
+        sim.object_positions[39] = [0.8, 0.0, 0.8]
+        sim.object_orientations[39] = [0.0, 0.0, 0.0]
+        sim.object_parents[39] = 30
+        simik = FakeSimIK()
+
+        with patch("coppeliasimagent.tools.kinematics.get_sim", return_value=sim), patch(
+            "coppeliasimagent.tools.kinematics.get_simik", return_value=simik
+        ):
+            joints = kinematics.find_robot_joints("/IRB4600")
+            ik = kinematics.setup_abb_arm_ik(
+                robot_path="/IRB4600",
+                tip_path="/IRB4600/IkTip",
+                target_path="/IRB4600/IkTarget",
+                verify_motion=True,
+            )
+
+        self.assertEqual(joints["joint_handles"], [31, 32, 33, 34, 35, 36])
+        self.assertEqual(joints["count"], 6)
+        self.assertEqual(ik["robot_handle"], 30)
+        self.assertEqual(ik["tip_handle"], 38)
+        self.assertEqual(ik["target_handle"], 39)
+        self.assertIsNotNone(ik["verification"])
 
 
 if __name__ == "__main__":

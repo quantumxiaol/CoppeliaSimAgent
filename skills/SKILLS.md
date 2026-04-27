@@ -56,6 +56,7 @@ python skills/toolcli.py list
 - `duplicate_object`
 - `rename_object`
 - `set_object_color`
+- `set_object_visibility`
 - `load_model`
 - `set_parent_child`
 - `spawn_waypoint`
@@ -74,6 +75,8 @@ python skills/toolcli.py list
 - `get_joint_force`
 - `set_joint_target_velocity`
 - `configure_abb_arm_drive`
+- `find_robot_joints`
+- `setup_abb_arm_ik`
 - `execute_joint_trajectory`
 - `execute_cartesian_waypoints`
 - `verify_joint_positions_reached`
@@ -116,10 +119,12 @@ python skills/toolcli.py list
 点云打磨：
 
 - `create_point_cloud_surface_from_shape`
+- `create_point_cloud_pottery_cylinder`
 - `insert_points_into_point_cloud`
 - `remove_points_near_tool`
 - `get_point_cloud_stats`
 - `simulate_polishing_step`
+- `simulate_polishing_contact`
 - `execute_polishing_path`
 
 运行态 live 验证脚本：

@@ -251,6 +251,12 @@ class RemoveObjectInput(ToolInputModel):
     handle: int
 
 
+class SetObjectVisibilityInput(ToolInputModel):
+    handle: int
+    visible: bool
+    include_descendants: bool = False
+
+
 class LoadModelInput(ToolInputModel):
     model_path: str = Field(min_length=1)
     position: list[float] = Field(min_length=3, max_length=3)
@@ -577,6 +583,45 @@ class SetupYouBotArmIKInput(ToolInputModel):
     @classmethod
     def validate_offset(cls, value: list[float]) -> list[float]:
         return _validate_vec3(value, field_name="offset")
+
+
+class FindRobotJointsInput(ToolInputModel):
+    robot_path: str = Field(default="/IRB4600", min_length=1)
+    include_aux_joint: bool = False
+
+    @field_validator("robot_path")
+    @classmethod
+    def validate_robot_path(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("robot_path cannot be empty")
+        return text
+
+
+class SetupAbbArmIKInput(ToolInputModel):
+    robot_path: str = Field(default="/IRB4600", min_length=1)
+    base_path: str | None = None
+    tip_path: str = Field(default="/IRB4600/IkTip", min_length=1)
+    target_path: str = Field(default="/IRB4600/IkTarget", min_length=1)
+    constraints_mask: int | None = None
+    verify_motion: bool = True
+    test_offset: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.02], min_length=3, max_length=3)
+    restore_target: bool = True
+
+    @field_validator("robot_path", "base_path", "tip_path", "target_path")
+    @classmethod
+    def validate_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            raise ValueError("path cannot be blank")
+        return text
+
+    @field_validator("test_offset")
+    @classmethod
+    def validate_test_offset(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="test_offset")
 
 
 class ActuateYouBotGripperInput(ToolInputModel):
@@ -923,6 +968,8 @@ class CreatePointCloudSurfaceFromShapeInput(ToolInputModel):
     grid_size: float = Field(default=0.02, gt=0.0)
     point_size: float = Field(default=0.01, gt=0.0)
     color: list[float] = Field(default_factory=lambda: [0.8, 0.8, 0.8], min_length=3, max_length=3)
+    hide_source_shape: bool = False
+    remove_source_shape: bool = False
 
     @field_validator("color")
     @classmethod
@@ -957,6 +1004,47 @@ class RemovePointsNearToolInput(ToolInputModel):
 
 class GetPointCloudStatsInput(ToolInputModel):
     point_cloud_handle: int
+
+
+class CreatePointCloudPotteryCylinderInput(ToolInputModel):
+    radius: float = Field(default=0.11, gt=0.0)
+    height: float = Field(default=0.45, gt=0.0)
+    center: list[float] = Field(default_factory=lambda: [0.55, 0.0, 0.225], min_length=3, max_length=3)
+    grid_size: float = Field(default=0.015, gt=0.0)
+    point_size: float = Field(default=0.008, gt=0.0)
+    color: list[float] = Field(default_factory=lambda: [0.9, 0.65, 0.35], min_length=3, max_length=3)
+    alias: str = Field(default="point_cloud_pottery_cylinder", min_length=1)
+    keep_source_shape: bool = False
+
+    @field_validator("center")
+    @classmethod
+    def validate_center(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="center")
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: list[float]) -> list[float]:
+        return _validate_color(value, field_name="color")
+
+    @field_validator("alias")
+    @classmethod
+    def validate_alias(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("alias cannot be blank")
+        return text
+
+
+class SimulatePolishingContactInput(ToolInputModel):
+    surface_cloud_handle: int
+    tool_position: list[float] = Field(min_length=3, max_length=3)
+    contact_radius: float = Field(gt=0.0)
+    removal_depth: float = Field(default=0.0, ge=0.0)
+
+    @field_validator("tool_position")
+    @classmethod
+    def validate_tool_position(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="tool_position")
 
 
 class SimulatePolishingStepInput(ToolInputModel):

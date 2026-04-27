@@ -14,6 +14,7 @@ from .schemas import (
     PrimitiveType,
     RenameObjectInput,
     RemoveObjectInput,
+    SetObjectVisibilityInput,
     SetObjectColorInput,
     SetObjectPoseInput,
     SpawnCuboidInput,
@@ -187,6 +188,43 @@ def remove_object(handle: int) -> None:
 
     # Backward compatibility with old APIs (deprecated in recent versions).
     sim.removeObject(payload.handle)
+
+
+def set_object_visibility(
+    handle: int,
+    visible: bool,
+    include_descendants: bool = False,
+) -> dict[str, object]:
+    """Set object visibility for one object or a whole subtree."""
+    try:
+        payload = SetObjectVisibilityInput.model_validate(
+            {
+                "handle": handle,
+                "visible": visible,
+                "include_descendants": include_descendants,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    targets = [payload.handle]
+    if payload.include_descendants:
+        targets = [int(h) for h in sim.getObjectsInTree(payload.handle)]
+
+    visibility_layer = 1 if payload.visible else 0
+    for target in targets:
+        if hasattr(sim, "setObjectInt32Param") and hasattr(sim, "objintparam_visibility_layer"):
+            sim.setObjectInt32Param(target, sim.objintparam_visibility_layer, visibility_layer)
+        elif hasattr(sim, "setObjectProperty") and hasattr(sim, "objectproperty_hidden"):
+            prop = int(sim.getObjectProperty(target)) if hasattr(sim, "getObjectProperty") else 0
+            hidden = int(sim.objectproperty_hidden)
+            prop = prop & ~hidden if payload.visible else prop | hidden
+            sim.setObjectProperty(target, prop)
+        else:
+            raise RuntimeError("Current CoppeliaSim API does not expose object visibility controls")
+
+    return {"handle": payload.handle, "visible": payload.visible, "applied_handles": targets}
 
 
 def _extract_first_handle(copy_result: object) -> int:

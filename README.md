@@ -355,6 +355,7 @@ uv run test/live_task_point_cloud_polishing.py
 - `rename_object(handle, new_alias)`
 - `set_object_color(handle, color, color_name, color_component)`
   - 支持传入 shape 句柄，或传入模型/父节点句柄（会自动向下查找 shape 后着色）
+- `set_object_visibility(handle, visible, include_descendants)`
 
 ### 模型与装配
 
@@ -380,8 +381,10 @@ uv run test/live_task_point_cloud_polishing.py
 - `stop_youbot_base(robot_path, motion_params)`
 - `set_youbot_base_locked(robot_path, locked, base_shape_paths, zero_wheels, reset_dynamics, motion_params)`
 - `configure_abb_arm_drive(robot_path, joint_mode, dyn_ctrl_mode, max_force_or_torque, signed_value, include_aux_joint, reset_dynamics)`
+- `find_robot_joints(robot_path, include_aux_joint)`
 - `setup_ik_link(base_handle, tip_handle, target_handle, constraints_mask)`
 - `setup_youbot_arm_ik(robot_path, base_path, tip_parent_path, tip_dummy_name, target_dummy_name, tip_offset, target_offset, constraints_mask, reuse_existing)`
+- `setup_abb_arm_ik(robot_path, base_path, tip_path, target_path, constraints_mask, verify_motion, test_offset, restore_target)`
 - `move_ik_target(environment_handle, group_handle, target_handle, position, relative_to, steps)`
 - `actuate_gripper(signal_name, closed)`
 - `actuate_youbot_gripper(robot_path, closed, command_mode, joint1_open, joint1_closed, joint2_open, joint2_closed, motion_params)`
@@ -417,11 +420,13 @@ uv run test/live_task_point_cloud_polishing.py
 
 ### 点云打磨
 
-- `create_point_cloud_surface_from_shape(shape_handle, grid_size, point_size, color)`
+- `create_point_cloud_surface_from_shape(shape_handle, grid_size, point_size, color, hide_source_shape, remove_source_shape)`
+- `create_point_cloud_pottery_cylinder(radius, height, center, grid_size, point_size, color, alias, keep_source_shape)`
 - `insert_points_into_point_cloud(point_cloud_handle, points, color)`
 - `remove_points_near_tool(point_cloud_handle, tool_handle, radius, tolerance)`
 - `get_point_cloud_stats(point_cloud_handle)`
 - `simulate_polishing_step(tool_handle, surface_cloud_handle, contact_radius, removal_depth)`
+- `simulate_polishing_contact(surface_cloud_handle, tool_position, contact_radius, removal_depth)`
 - `execute_polishing_path(environment_handle, group_handle, target_handle, tool_handle, surface_cloud_handle, waypoints, contact_radius, removal_depth, relative_to, steps_per_waypoint, dwell_seconds)`
 
 ## IK 与 Python Wrapper 排查

@@ -16,6 +16,7 @@ from .schemas import (
     GetJointModeInput,
     GetJointPositionInput,
     GetJointTargetForceInput,
+    FindRobotJointsInput,
     MoveIKTargetInput,
     SetJointDynCtrlModeInput,
     SetJointModeInput,
@@ -25,6 +26,7 @@ from .schemas import (
     SetJointTargetVelocityInput,
     SetYouBotBaseLockedInput,
     SetYouBotWheelVelocitiesInput,
+    SetupAbbArmIKInput,
     SetupIKLinkInput,
     SetupYouBotArmIKInput,
     SpawnWaypointInput,
@@ -805,6 +807,124 @@ def setup_youbot_arm_ik(
         "robot_path": payload.robot_path,
         "tip_path": tip_path,
         "target_path": target_path,
+        **ik_info,
+    }
+
+
+def find_robot_joints(
+    robot_path: str = "/IRB4600",
+    include_aux_joint: bool = False,
+) -> dict[str, object]:
+    """Find joint handles below a robot model path in tree order."""
+    try:
+        payload = FindRobotJointsInput.model_validate(
+            {"robot_path": robot_path, "include_aux_joint": include_aux_joint}
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    robot_handle = _resolve_object_handle(sim, payload.robot_path)
+    joint_handles = _abb_arm_joint_handles(
+        sim,
+        payload.robot_path,
+        include_aux_joint=payload.include_aux_joint,
+    )
+    joint_names = [
+        str(sim.getObjectAlias(handle) if hasattr(sim, "getObjectAlias") else sim.getObjectName(handle))
+        for handle in joint_handles
+    ]
+    return {
+        "robot_path": payload.robot_path,
+        "robot_handle": robot_handle,
+        "joint_handles": joint_handles,
+        "joint_names": joint_names,
+        "count": len(joint_handles),
+    }
+
+
+def setup_abb_arm_ik(
+    robot_path: str = "/IRB4600",
+    base_path: str | None = None,
+    tip_path: str = "/IRB4600/IkTip",
+    target_path: str = "/IRB4600/IkTarget",
+    constraints_mask: int | None = None,
+    verify_motion: bool = True,
+    test_offset: list[float] | None = None,
+    restore_target: bool = True,
+) -> dict[str, object]:
+    """Set up ABB IRB4600 IK using the model's existing IkTip/IkTarget dummies."""
+    try:
+        payload = SetupAbbArmIKInput.model_validate(
+            {
+                "robot_path": robot_path,
+                "base_path": base_path,
+                "tip_path": tip_path,
+                "target_path": target_path,
+                "constraints_mask": constraints_mask,
+                "verify_motion": verify_motion,
+                "test_offset": test_offset if test_offset is not None else [0.0, 0.0, 0.02],
+                "restore_target": restore_target,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    robot_handle = _resolve_object_handle(sim, payload.robot_path)
+    base_handle = _resolve_object_handle(sim, payload.base_path) if payload.base_path else robot_handle
+    tip_handle = _resolve_object_handle(sim, payload.tip_path)
+    target_handle = _resolve_object_handle(sim, payload.target_path)
+
+    target_before = [float(v) for v in sim.getObjectPosition(target_handle, -1)]
+    tip_before = [float(v) for v in sim.getObjectPosition(tip_handle, -1)]
+    ik_info = setup_ik_link(
+        base_handle=base_handle,
+        tip_handle=tip_handle,
+        target_handle=target_handle,
+        constraints_mask=payload.constraints_mask,
+    )
+
+    verification: dict[str, object] | None = None
+    if payload.verify_motion:
+        target_test = [target_before[i] + payload.test_offset[i] for i in range(3)]
+        move_ik_target(
+            environment_handle=int(ik_info["environment_handle"]),
+            group_handle=int(ik_info["group_handle"]),
+            target_handle=target_handle,
+            position=target_test,
+            relative_to=-1,
+            steps=5,
+        )
+        tip_after = [float(v) for v in sim.getObjectPosition(tip_handle, -1)]
+        moved_distance = sum((tip_after[i] - tip_before[i]) ** 2 for i in range(3)) ** 0.5
+        verification = {
+            "target_test_position": target_test,
+            "tip_before": tip_before,
+            "tip_after": tip_after,
+            "tip_moved_distance": moved_distance,
+            "tip_moved": moved_distance > 1e-5,
+        }
+        if payload.restore_target:
+            sim.setObjectPosition(target_handle, -1, target_before)
+            move_ik_target(
+                environment_handle=int(ik_info["environment_handle"]),
+                group_handle=int(ik_info["group_handle"]),
+                target_handle=target_handle,
+                position=target_before,
+                relative_to=-1,
+                steps=5,
+            )
+
+    return {
+        "robot_path": payload.robot_path,
+        "robot_handle": robot_handle,
+        "base_handle": base_handle,
+        "tip_handle": tip_handle,
+        "target_handle": target_handle,
+        "tip_path": payload.tip_path,
+        "target_path": payload.target_path,
+        "verification": verification,
         **ik_info,
     }
 
