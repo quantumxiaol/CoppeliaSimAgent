@@ -13,3 +13,4 @@ wheels/
 .env
 CoppeliaSimSoftware/
 robot_ttm/
+data_ttm/
