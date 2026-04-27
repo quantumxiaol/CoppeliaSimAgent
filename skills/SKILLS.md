@@ -24,6 +24,9 @@ uv run coppelia-toolcli show load_model
 uv run coppelia-toolcli call find_objects --payload '{"name_query":"jar","include_types":["shape"]}'
 uv run coppelia-toolcli call get_plugin_status
 uv run coppelia-toolcli call get_relative_pose --payload '{"source_handle":45,"target_handle":20}'
+uv run coppelia-toolcli call step_simulation --payload '{"steps":5}'
+uv run coppelia-toolcli call execute_joint_trajectory --payload '{"joint_handles":[31,32],"waypoints":[[0.1,0.2],[0.2,0.3]],"mode":"target_position"}'
+uv run coppelia-toolcli call simulate_polishing_step --payload '{"tool_handle":42,"surface_cloud_handle":99,"contact_radius":0.03}'
 python skills/toolcli.py list
 ```
 
@@ -36,11 +39,16 @@ python skills/toolcli.py list
 - `start_simulation`
 - `pause_simulation`
 - `stop_simulation`
+- `step_simulation`
+- `wait_seconds`
+- `wait_until_state`
+- `wait_until_object_pose_stable`
 - `get_scene_graph`
 - `find_objects`
 - `get_object_pose`
 - `get_relative_pose`
 - `check_collision`
+- `check_collision_monitor`
 - `spawn_primitive`
 - `spawn_cuboid`
 - `set_object_pose`
@@ -66,6 +74,12 @@ python skills/toolcli.py list
 - `get_joint_force`
 - `set_joint_target_velocity`
 - `configure_abb_arm_drive`
+- `execute_joint_trajectory`
+- `execute_cartesian_waypoints`
+- `verify_joint_positions_reached`
+- `verify_object_moved`
+- `verify_object_velocity_below`
+- `verify_force_threshold`
 
 移动底盘与 IK：
 
@@ -81,6 +95,41 @@ python skills/toolcli.py list
 
 - `actuate_gripper`
 - `actuate_youbot_gripper`
+- `attach_object_to_gripper`
+- `detach_object`
+- `grasp_object`
+- `release_object`
+
+动力学属性：
+
+- `get_object_velocity`
+- `reset_dynamic_object`
+- `set_shape_dynamics`
+
+传感器与接触监控：
+
+- `read_proximity_sensor`
+- `read_force_sensor`
+- `get_vision_sensor_image`
+- `check_collision_monitor`
+
+点云打磨：
+
+- `create_point_cloud_surface_from_shape`
+- `insert_points_into_point_cloud`
+- `remove_points_near_tool`
+- `get_point_cloud_stats`
+- `simulate_polishing_step`
+- `execute_polishing_path`
+
+运行态 live 验证脚本：
+
+```bash
+uv run test/live_task_abb_joint_trajectory.py \
+  --model-path "robot_ttm/ABB IRB 4600-40-255.ttm"
+
+uv run test/live_task_point_cloud_polishing.py
+```
 
 说明：
 

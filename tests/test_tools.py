@@ -12,7 +12,20 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from coppeliasimagent.core.exceptions import ToolValidationError
-from coppeliasimagent.tools import kinematics, models, primitives, scene, simulation
+from coppeliasimagent.tools import (
+    dynamics,
+    grasp,
+    kinematics,
+    models,
+    point_cloud,
+    primitives,
+    runtime,
+    scene,
+    sensors,
+    simulation,
+    trajectory,
+    verification,
+)
 
 
 class FakeSim:
@@ -26,6 +39,7 @@ class FakeSim:
     colorcomponent_transparency = 14
     shapeintparam_static = 20
     shapeintparam_respondable = 21
+    shapefloatparam_friction = 22
     handleflag_model = 0x040000
 
     handle_scene = -2
@@ -245,6 +259,12 @@ class FakeSim:
             (37, self.jointintparam_dynctrlmode): self.jointdynctrl_free,
         }
         self.reset_dynamic_calls: list[int] = []
+        self.object_velocities: dict[int, tuple[list[float], list[float]]] = {
+            1: ([0.01, 0.02, 0.0], [0.0, 0.0, 0.03]),
+        }
+        self.shape_masses: dict[int, float] = {}
+        self.object_float_params: dict[tuple[int, int], float] = {}
+        self.point_cloud_counts: dict[int, int] = {}
 
     def _children_of(self, parent: int) -> list[int]:
         return [handle for handle, value in self.object_parents.items() if value == parent]
@@ -461,6 +481,73 @@ class FakeSim:
         self.calls.append(("resetDynamicObject", (handle,)))
         self.reset_dynamic_calls.append(handle)
         return 1
+
+    def getObjectVelocity(self, handle: int) -> tuple[list[float], list[float]]:  # noqa: N802
+        return self.object_velocities.get(handle, ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]))
+
+    def setShapeMass(self, handle: int, mass: float) -> None:  # noqa: N802
+        self.calls.append(("setShapeMass", (handle, mass)))
+        self.shape_masses[handle] = float(mass)
+
+    def setObjectFloatParam(self, handle: int, param: int, value: float) -> None:  # noqa: N802
+        self.calls.append(("setObjectFloatParam", (handle, param, value)))
+        self.object_float_params[(handle, param)] = float(value)
+
+    def readProximitySensor(self, handle: int) -> tuple[int, list[float], int, list[float]]:  # noqa: N802
+        self.calls.append(("readProximitySensor", (handle,)))
+        return 1, [0.1, 0.0, 0.0], 1, [0.0, 0.0, 1.0]
+
+    def readForceSensor(self, handle: int) -> tuple[int, list[float], list[float]]:  # noqa: N802
+        self.calls.append(("readForceSensor", (handle,)))
+        return 1, [1.0, 2.0, 3.0], [0.1, 0.2, 0.3]
+
+    def getVisionSensorImg(self, handle: int, options: int = 0) -> tuple[bytes, list[int]]:  # noqa: N802
+        self.calls.append(("getVisionSensorImg", (handle, options)))
+        return b"123456", [2, 1]
+
+    def createPointCloud(self, max_voxel_size: float, max_pts_per_voxel: int, options: int, point_size: float) -> int:  # noqa: N802
+        self.calls.append(("createPointCloud", (max_voxel_size, max_pts_per_voxel, options, point_size)))
+        handle = self.next_handle
+        self.next_handle += 1
+        self.point_cloud_counts[handle] = 0
+        return handle
+
+    def insertObjectIntoPointCloud(  # noqa: N802
+        self,
+        point_cloud_handle: int,
+        object_handle: int,
+        options: int,
+        grid_size: float,
+        color: list[int] | None,
+    ) -> int:
+        self.calls.append(("insertObjectIntoPointCloud", (point_cloud_handle, object_handle, options, grid_size, color)))
+        self.point_cloud_counts[point_cloud_handle] = 10
+        return 10
+
+    def insertPointsIntoPointCloud(  # noqa: N802
+        self,
+        point_cloud_handle: int,
+        options: int,
+        points: list[float],
+        color: list[int] | None,
+    ) -> int:
+        self.calls.append(("insertPointsIntoPointCloud", (point_cloud_handle, options, points, color)))
+        self.point_cloud_counts[point_cloud_handle] = self.point_cloud_counts.get(point_cloud_handle, 0) + len(points) // 3
+        return self.point_cloud_counts[point_cloud_handle]
+
+    def removePointsFromPointCloud(  # noqa: N802
+        self,
+        point_cloud_handle: int,
+        options: int,
+        points: list[float],
+        tolerance: float,
+    ) -> int:
+        self.calls.append(("removePointsFromPointCloud", (point_cloud_handle, options, points, tolerance)))
+        self.point_cloud_counts[point_cloud_handle] = max(0, self.point_cloud_counts.get(point_cloud_handle, 0) - 3)
+        return self.point_cloud_counts[point_cloud_handle]
+
+    def getPointCloudOptions(self, point_cloud_handle: int) -> dict[str, int]:  # noqa: N802
+        return {"handle": point_cloud_handle}
 
     def getSimulationState(self) -> int:  # noqa: N802
         self.calls.append(("getSimulationState", ()))
@@ -809,6 +896,118 @@ class TestTools(unittest.TestCase):
         self.assertIn(10 | sim.handleflag_model, sim.reset_dynamic_calls)
         self.assertEqual(sim.object_int_params[(19, sim.shapeintparam_static)], 1)
         self.assertEqual(sim.object_int_params[(20, sim.shapeintparam_static)], 1)
+
+    def test_runtime_step_and_wait_tools(self) -> None:
+        sim = FakeSim()
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.stepping: list[bool] = []
+                self.steps = 0
+
+            def setStepping(self, enabled: bool) -> None:  # noqa: N802
+                self.stepping.append(enabled)
+
+            def step(self) -> None:
+                self.steps += 1
+
+        class FakeConnection:
+            def __init__(self) -> None:
+                self.sim = sim
+                self.client = FakeClient()
+
+        conn = FakeConnection()
+        with patch("coppeliasimagent.tools.runtime.get_connection", return_value=conn), patch(
+            "coppeliasimagent.tools.runtime.get_sim", return_value=sim
+        ):
+            out = runtime.step_simulation(steps=3, keep_stepping_enabled=False)
+            wait = runtime.wait_until_state("simulation_advancing_running", timeout_s=0.1)
+            stable = runtime.wait_until_object_pose_stable(
+                handle=1,
+                stable_duration_s=0.01,
+                timeout_s=0.2,
+                poll_interval_s=0.01,
+            )
+
+        self.assertEqual(out["steps"], 3)
+        self.assertEqual(conn.client.steps, 3)
+        self.assertEqual(conn.client.stepping, [True, True, False])
+        self.assertTrue(wait["reached"])
+        self.assertTrue(stable["stable"])
+
+    def test_trajectory_and_verification_tools(self) -> None:
+        sim = FakeSim()
+        simik = FakeSimIK()
+        with patch("coppeliasimagent.tools.kinematics.get_sim", return_value=sim), patch(
+            "coppeliasimagent.tools.trajectory.get_sim", return_value=sim
+        ), patch("coppeliasimagent.tools.verification.get_sim", return_value=sim), patch(
+            "coppeliasimagent.tools.kinematics.get_simik", return_value=simik
+        ):
+            joint_out = trajectory.execute_joint_trajectory(
+                joint_handles=[31, 32],
+                waypoints=[[0.2, 0.3], [0.4, 0.5]],
+                mode="target_position",
+            )
+            target = kinematics.spawn_waypoint([0.0, 0.0, 0.2])
+            ik_info = kinematics.setup_ik_link(base_handle=30, tip_handle=36, target_handle=target)
+            cart_out = trajectory.execute_cartesian_waypoints(
+                environment_handle=ik_info["environment_handle"],
+                group_handle=ik_info["group_handle"],
+                target_handle=target,
+                waypoints=[[0.1, 0.0, 0.3], [0.2, 0.0, 0.3]],
+                steps_per_waypoint=2,
+            )
+            reached = verification.verify_joint_positions_reached([31, 32], [0.4, 0.5], tolerance=0.001)
+            moved = verification.verify_object_moved(handle=1, start_position=[0.0, 0.0, 0.0], min_distance=0.01)
+            force = verification.verify_force_threshold([11], min_abs_force=1.0)
+
+        self.assertEqual(joint_out["waypoint_count"], 2)
+        self.assertEqual(joint_out["final_positions"], [0.4, 0.5])
+        self.assertEqual(cart_out["waypoint_count"], 2)
+        self.assertTrue(reached["reached"])
+        self.assertTrue(moved["moved"])
+        self.assertTrue(force["threshold_met"])
+
+    def test_dynamics_grasp_sensor_and_point_cloud_tools(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.dynamics.get_sim", return_value=sim), patch(
+            "coppeliasimagent.tools.verification.get_object_velocity",
+            wraps=lambda handle: dynamics.get_object_velocity(handle),
+        ), patch("coppeliasimagent.tools.grasp.get_sim", return_value=sim), patch(
+            "coppeliasimagent.tools.sensors.get_sim", return_value=sim
+        ), patch("coppeliasimagent.tools.scene.get_sim", return_value=sim), patch(
+            "coppeliasimagent.tools.point_cloud.get_sim", return_value=sim
+        ):
+            velocity = dynamics.get_object_velocity(1)
+            dyn = dynamics.set_shape_dynamics(1, static=False, respondable=True, mass=2.5, friction=0.4)
+            reset = dynamics.reset_dynamic_object(1)
+            attached = grasp.attach_object_to_gripper(1, 12)
+            detached = grasp.detach_object(1)
+            proximity = sensors.read_proximity_sensor(2)
+            force = sensors.read_force_sensor(2)
+            image = sensors.get_vision_sensor_image(2)
+            monitor = sensors.check_collision_monitor(1, 2)
+            pc = point_cloud.create_point_cloud_surface_from_shape(1, grid_size=0.02, point_size=0.01)
+            inserted = point_cloud.insert_points_into_point_cloud(
+                pc["point_cloud_handle"],
+                [[0.0, 0.0, 0.0], [0.01, 0.0, 0.0]],
+            )
+            removed = point_cloud.simulate_polishing_step(2, pc["point_cloud_handle"], contact_radius=0.03)
+            stats = point_cloud.get_point_cloud_stats(pc["point_cloud_handle"])
+
+        self.assertAlmostEqual(velocity["linear_speed"], math.sqrt(0.0005))
+        self.assertEqual(dyn["applied"]["mass"], 2.5)
+        self.assertEqual(reset["result"], 1)
+        self.assertEqual(attached["gripper_handle"], 12)
+        self.assertEqual(detached["parent_handle"], -1)
+        self.assertTrue(proximity["detected"])
+        self.assertEqual(force["force"], [1.0, 2.0, 3.0])
+        self.assertEqual(image["resolution"], [2, 1])
+        self.assertTrue(monitor["ever_collided"])
+        self.assertEqual(pc["point_count"], 10)
+        self.assertEqual(inserted["inserted_points"], 2)
+        self.assertLess(removed["point_count"], inserted["point_count"])
+        self.assertEqual(stats["known_point_count"], removed["point_count"])
 
 
 if __name__ == "__main__":

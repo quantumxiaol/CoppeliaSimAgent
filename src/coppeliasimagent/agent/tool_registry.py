@@ -7,6 +7,8 @@ from typing import Any, Callable, Mapping
 
 from pydantic import BaseModel
 
+from ..tools.dynamics import get_object_velocity, reset_dynamic_object, set_shape_dynamics
+from ..tools.grasp import attach_object_to_gripper, detach_object, grasp_object, release_object
 from ..tools.kinematics import (
     actuate_gripper,
     actuate_youbot_gripper,
@@ -32,6 +34,14 @@ from ..tools.kinematics import (
     spawn_waypoint,
 )
 from ..tools.models import load_model, set_parent_child
+from ..tools.point_cloud import (
+    create_point_cloud_surface_from_shape,
+    execute_polishing_path,
+    get_point_cloud_stats,
+    insert_points_into_point_cloud,
+    remove_points_near_tool,
+    simulate_polishing_step,
+)
 from ..tools.primitives import (
     duplicate_object,
     remove_object,
@@ -41,7 +51,9 @@ from ..tools.primitives import (
     spawn_cuboid,
     spawn_primitive,
 )
+from ..tools.runtime import step_simulation, wait_seconds, wait_until_object_pose_stable, wait_until_state
 from ..tools.scene import check_collision, find_objects, get_object_pose, get_relative_pose, get_scene_graph
+from ..tools.sensors import check_collision_monitor, get_vision_sensor_image, read_force_sensor, read_proximity_sensor
 from ..tools.simulation import (
     get_plugin_status,
     get_simulation_state,
@@ -49,15 +61,32 @@ from ..tools.simulation import (
     start_simulation,
     stop_simulation,
 )
+from ..tools.trajectory import execute_cartesian_waypoints, execute_joint_trajectory
+from ..tools.verification import (
+    verify_force_threshold,
+    verify_joint_positions_reached,
+    verify_object_moved,
+    verify_object_velocity_below,
+)
 from ..tools.schemas import (
     ActuateGripperInput,
     ActuateYouBotGripperInput,
+    AttachObjectToGripperInput,
     CheckCollisionInput,
+    CheckCollisionMonitorInput,
     ConfigureAbbArmDriveInput,
+    CreatePointCloudSurfaceFromShapeInput,
+    DetachObjectInput,
     DriveYouBotBaseInput,
     DuplicateObjectInput,
+    ExecuteCartesianWaypointsInput,
+    ExecuteJointTrajectoryInput,
+    ExecutePolishingPathInput,
     FindObjectsInput,
+    GetVisionSensorImageInput,
+    GetObjectVelocityInput,
     GetObjectPoseInput,
+    GetPointCloudStatsInput,
     GetPluginStatusInput,
     GetJointDynCtrlModeInput,
     GetJointForceInput,
@@ -67,13 +96,21 @@ from ..tools.schemas import (
     GetSceneGraphInput,
     GetSimulationStateInput,
     GetJointTargetForceInput,
+    GraspObjectInput,
+    InsertPointsIntoPointCloudInput,
     LoadModelInput,
     MoveIKTargetInput,
     PauseSimulationInput,
+    ReadForceSensorInput,
+    ReadProximitySensorInput,
     RenameObjectInput,
     RemoveObjectInput,
+    RemovePointsNearToolInput,
+    ReleaseObjectInput,
+    ResetDynamicObjectInput,
     SetObjectColorInput,
     SetObjectPoseInput,
+    SetShapeDynamicsInput,
     SetJointDynCtrlModeInput,
     SetJointModeInput,
     SetJointPositionInput,
@@ -82,6 +119,8 @@ from ..tools.schemas import (
     SetJointTargetVelocityInput,
     SetParentChildInput,
     SetYouBotBaseLockedInput,
+    SimulatePolishingStepInput,
+    StepSimulationInput,
     StartSimulationInput,
     StopYouBotBaseInput,
     StopSimulationInput,
@@ -91,6 +130,13 @@ from ..tools.schemas import (
     SpawnCuboidInput,
     SpawnPrimitiveInput,
     SpawnWaypointInput,
+    VerifyForceThresholdInput,
+    VerifyJointPositionsReachedInput,
+    VerifyObjectMovedInput,
+    VerifyObjectVelocityBelowInput,
+    WaitSecondsInput,
+    WaitUntilObjectPoseStableInput,
+    WaitUntilStateInput,
 )
 
 
@@ -149,6 +195,30 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         input_model=StopSimulationInput,
         handler=stop_simulation,
     ),
+    "step_simulation": ToolDefinition(
+        name="step_simulation",
+        description="Advance CoppeliaSim by deterministic remote stepping ticks when supported.",
+        input_model=StepSimulationInput,
+        handler=step_simulation,
+    ),
+    "wait_seconds": ToolDefinition(
+        name="wait_seconds",
+        description="Wait in the external agent process for a number of seconds.",
+        input_model=WaitSecondsInput,
+        handler=wait_seconds,
+    ),
+    "wait_until_state": ToolDefinition(
+        name="wait_until_state",
+        description="Poll simulation lifecycle state until a target label or numeric value appears.",
+        input_model=WaitUntilStateInput,
+        handler=wait_until_state,
+    ),
+    "wait_until_object_pose_stable": ToolDefinition(
+        name="wait_until_object_pose_stable",
+        description="Wait until an object's pose remains stable within tolerances.",
+        input_model=WaitUntilObjectPoseStableInput,
+        handler=wait_until_object_pose_stable,
+    ),
     "get_scene_graph": ToolDefinition(
         name="get_scene_graph",
         description="Read scene graph states (name, handle, pose) from CoppeliaSim.",
@@ -178,6 +248,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Run collision check between two entities/collections.",
         input_model=CheckCollisionInput,
         handler=check_collision,
+    ),
+    "check_collision_monitor": ToolDefinition(
+        name="check_collision_monitor",
+        description="Monitor a collision pair for a duration and report whether contact occurred.",
+        input_model=CheckCollisionMonitorInput,
+        handler=check_collision_monitor,
     ),
     "spawn_primitive": ToolDefinition(
         name="spawn_primitive",
@@ -232,6 +308,24 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Create parent-child assembly relation between two handles.",
         input_model=SetParentChildInput,
         handler=set_parent_child,
+    ),
+    "get_object_velocity": ToolDefinition(
+        name="get_object_velocity",
+        description="Read object linear/angular velocity and speed.",
+        input_model=GetObjectVelocityInput,
+        handler=get_object_velocity,
+    ),
+    "reset_dynamic_object": ToolDefinition(
+        name="reset_dynamic_object",
+        description="Reset dynamic state for an object or model.",
+        input_model=ResetDynamicObjectInput,
+        handler=reset_dynamic_object,
+    ),
+    "set_shape_dynamics": ToolDefinition(
+        name="set_shape_dynamics",
+        description="Set shape static/respondable flags and optional mass/friction.",
+        input_model=SetShapeDynamicsInput,
+        handler=set_shape_dynamics,
     ),
     "spawn_waypoint": ToolDefinition(
         name="spawn_waypoint",
@@ -364,6 +458,120 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Open/close the two-jaw youBot gripper via its finger joints.",
         input_model=ActuateYouBotGripperInput,
         handler=actuate_youbot_gripper,
+    ),
+    "execute_joint_trajectory": ToolDefinition(
+        name="execute_joint_trajectory",
+        description="Execute joint-space waypoints using immediate or target-position commands.",
+        input_model=ExecuteJointTrajectoryInput,
+        handler=execute_joint_trajectory,
+    ),
+    "execute_cartesian_waypoints": ToolDefinition(
+        name="execute_cartesian_waypoints",
+        description="Move an IK target through Cartesian waypoints and solve each segment.",
+        input_model=ExecuteCartesianWaypointsInput,
+        handler=execute_cartesian_waypoints,
+    ),
+    "verify_joint_positions_reached": ToolDefinition(
+        name="verify_joint_positions_reached",
+        description="Check whether joints are within tolerance of requested positions.",
+        input_model=VerifyJointPositionsReachedInput,
+        handler=verify_joint_positions_reached,
+    ),
+    "verify_object_moved": ToolDefinition(
+        name="verify_object_moved",
+        description="Check whether an object moved at least a minimum distance from a start position.",
+        input_model=VerifyObjectMovedInput,
+        handler=verify_object_moved,
+    ),
+    "verify_object_velocity_below": ToolDefinition(
+        name="verify_object_velocity_below",
+        description="Check whether object linear/angular velocity is below thresholds.",
+        input_model=VerifyObjectVelocityBelowInput,
+        handler=verify_object_velocity_below,
+    ),
+    "verify_force_threshold": ToolDefinition(
+        name="verify_force_threshold",
+        description="Check whether any listed joint reports at least a requested force magnitude.",
+        input_model=VerifyForceThresholdInput,
+        handler=verify_force_threshold,
+    ),
+    "attach_object_to_gripper": ToolDefinition(
+        name="attach_object_to_gripper",
+        description="Parent an object under a gripper/tip handle.",
+        input_model=AttachObjectToGripperInput,
+        handler=attach_object_to_gripper,
+    ),
+    "detach_object": ToolDefinition(
+        name="detach_object",
+        description="Detach an object to world or another parent.",
+        input_model=DetachObjectInput,
+        handler=detach_object,
+    ),
+    "grasp_object": ToolDefinition(
+        name="grasp_object",
+        description="Close a gripper command path and optionally attach an object.",
+        input_model=GraspObjectInput,
+        handler=grasp_object,
+    ),
+    "release_object": ToolDefinition(
+        name="release_object",
+        description="Open a gripper command path and optionally detach an object.",
+        input_model=ReleaseObjectInput,
+        handler=release_object,
+    ),
+    "read_proximity_sensor": ToolDefinition(
+        name="read_proximity_sensor",
+        description="Read one proximity sensor.",
+        input_model=ReadProximitySensorInput,
+        handler=read_proximity_sensor,
+    ),
+    "read_force_sensor": ToolDefinition(
+        name="read_force_sensor",
+        description="Read one force sensor.",
+        input_model=ReadForceSensorInput,
+        handler=read_force_sensor,
+    ),
+    "get_vision_sensor_image": ToolDefinition(
+        name="get_vision_sensor_image",
+        description="Read a vision sensor image or metadata.",
+        input_model=GetVisionSensorImageInput,
+        handler=get_vision_sensor_image,
+    ),
+    "create_point_cloud_surface_from_shape": ToolDefinition(
+        name="create_point_cloud_surface_from_shape",
+        description="Create a point-cloud surface sampled from a shape.",
+        input_model=CreatePointCloudSurfaceFromShapeInput,
+        handler=create_point_cloud_surface_from_shape,
+    ),
+    "insert_points_into_point_cloud": ToolDefinition(
+        name="insert_points_into_point_cloud",
+        description="Insert explicit world-frame points into a point cloud.",
+        input_model=InsertPointsIntoPointCloudInput,
+        handler=insert_points_into_point_cloud,
+    ),
+    "remove_points_near_tool": ToolDefinition(
+        name="remove_points_near_tool",
+        description="Remove point-cloud points near a tool object's current position.",
+        input_model=RemovePointsNearToolInput,
+        handler=remove_points_near_tool,
+    ),
+    "get_point_cloud_stats": ToolDefinition(
+        name="get_point_cloud_stats",
+        description="Return known point-cloud count and simulator options when available.",
+        input_model=GetPointCloudStatsInput,
+        handler=get_point_cloud_stats,
+    ),
+    "simulate_polishing_step": ToolDefinition(
+        name="simulate_polishing_step",
+        description="Remove point-cloud surface points near the polishing tool.",
+        input_model=SimulatePolishingStepInput,
+        handler=simulate_polishing_step,
+    ),
+    "execute_polishing_path": ToolDefinition(
+        name="execute_polishing_path",
+        description="Move an IK target along a path and run a polishing point-removal step at each waypoint.",
+        input_model=ExecutePolishingPathInput,
+        handler=execute_polishing_path,
     ),
 }
 

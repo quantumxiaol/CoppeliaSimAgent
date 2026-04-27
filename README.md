@@ -292,6 +292,15 @@ uv run test/live_tool_set_parent_child.py
 uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.ttm
 ```
 
+运行态动作与点云打磨验证：
+
+```bash
+uv run test/live_task_abb_joint_trajectory.py \
+  --model-path "robot_ttm/ABB IRB 4600-40-255.ttm"
+
+uv run test/live_task_point_cloud_polishing.py
+```
+
 说明：
 
 - 这些脚本不是 `unittest` 用例，因此文件名不以 `test_` 开头。
@@ -331,6 +340,10 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 - `start_simulation()`
 - `pause_simulation()`
 - `stop_simulation()`
+- `step_simulation(steps, start_if_stopped, keep_stepping_enabled)`
+- `wait_seconds(seconds)`
+- `wait_until_state(target_state, timeout_s, poll_interval_s)`
+- `wait_until_object_pose_stable(handle, position_tolerance, orientation_tolerance_deg, stable_duration_s, timeout_s, poll_interval_s, relative_to)`
 
 ### 基础几何体
 
@@ -372,6 +385,44 @@ uv run test/live_tool_load_robot_model.py --model-path /absolute/path/to/robot.t
 - `move_ik_target(environment_handle, group_handle, target_handle, position, relative_to, steps)`
 - `actuate_gripper(signal_name, closed)`
 - `actuate_youbot_gripper(robot_path, closed, command_mode, joint1_open, joint1_closed, joint2_open, joint2_closed, motion_params)`
+- `execute_joint_trajectory(joint_handles, waypoints, mode, dwell_seconds, motion_params)`
+- `execute_cartesian_waypoints(environment_handle, group_handle, target_handle, waypoints, relative_to, steps_per_waypoint, dwell_seconds)`
+
+### 动作验证
+
+- `verify_joint_positions_reached(joint_handles, target_positions, tolerance)`
+- `verify_object_moved(handle, start_position, min_distance, relative_to)`
+- `verify_object_velocity_below(handle, max_linear_speed, max_angular_speed)`
+- `verify_force_threshold(joint_handles, min_abs_force)`
+
+### 抓取与释放
+
+- `attach_object_to_gripper(object_handle, gripper_handle, keep_in_place)`
+- `detach_object(object_handle, parent_handle, keep_in_place)`
+- `grasp_object(object_handle, gripper_handle, signal_name, robot_path, close_gripper, attach, keep_in_place)`
+- `release_object(object_handle, signal_name, robot_path, parent_handle, open_gripper, detach, keep_in_place)`
+
+### 动力学属性
+
+- `get_object_velocity(handle)`
+- `reset_dynamic_object(handle, include_model)`
+- `set_shape_dynamics(handle, static, respondable, mass, friction)`
+
+### 传感器与接触监控
+
+- `read_proximity_sensor(handle)`
+- `read_force_sensor(handle)`
+- `get_vision_sensor_image(handle, grayscale, metadata_only)`
+- `check_collision_monitor(entity1, entity2, duration_s, poll_interval_s)`
+
+### 点云打磨
+
+- `create_point_cloud_surface_from_shape(shape_handle, grid_size, point_size, color)`
+- `insert_points_into_point_cloud(point_cloud_handle, points, color)`
+- `remove_points_near_tool(point_cloud_handle, tool_handle, radius, tolerance)`
+- `get_point_cloud_stats(point_cloud_handle)`
+- `simulate_polishing_step(tool_handle, surface_cloud_handle, contact_radius, removal_depth)`
+- `execute_polishing_path(environment_handle, group_handle, target_handle, tool_handle, surface_cloud_handle, waypoints, contact_radius, removal_depth, relative_to, steps_per_waypoint, dwell_seconds)`
 
 ## IK 与 Python Wrapper 排查
 

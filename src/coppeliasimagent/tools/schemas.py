@@ -38,6 +38,11 @@ class JointCommandMode(str, Enum):
     TARGET_POSITION = "target_position"
 
 
+class JointTrajectoryMode(str, Enum):
+    POSITION = "position"
+    TARGET_POSITION = "target_position"
+
+
 class JointMode(str, Enum):
     KINEMATIC = "kinematic"
     DEPENDENT = "dependent"
@@ -355,6 +360,48 @@ class PauseSimulationInput(EmptyToolInput):
 
 class StopSimulationInput(EmptyToolInput):
     pass
+
+
+class StepSimulationInput(ToolInputModel):
+    steps: int = Field(default=1, ge=1, le=10000)
+    start_if_stopped: bool = True
+    keep_stepping_enabled: bool = True
+
+
+class WaitSecondsInput(ToolInputModel):
+    seconds: float = Field(ge=0.0, le=600.0)
+
+    @field_validator("seconds")
+    @classmethod
+    def validate_seconds(cls, value: float) -> float:
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("seconds must be finite")
+        return value
+
+
+class WaitUntilStateInput(ToolInputModel):
+    target_state: str = Field(min_length=1)
+    timeout_s: float = Field(default=5.0, gt=0.0, le=600.0)
+    poll_interval_s: float = Field(default=0.05, gt=0.0, le=10.0)
+
+    @field_validator("target_state")
+    @classmethod
+    def validate_target_state(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("target_state cannot be blank")
+        return text
+
+
+class WaitUntilObjectPoseStableInput(ToolInputModel):
+    handle: int
+    position_tolerance: float = Field(default=0.001, gt=0.0)
+    orientation_tolerance_deg: float = Field(default=0.1, gt=0.0)
+    stable_duration_s: float = Field(default=0.25, gt=0.0, le=60.0)
+    timeout_s: float = Field(default=5.0, gt=0.0, le=600.0)
+    poll_interval_s: float = Field(default=0.05, gt=0.0, le=10.0)
+    relative_to: int = -1
 
 
 class SpawnWaypointInput(ToolInputModel):
@@ -694,6 +741,248 @@ class ConfigureAbbArmDriveInput(ToolInputModel):
         if not math.isfinite(value):
             raise ValueError("max_force_or_torque must be finite")
         return value
+
+
+class ExecuteJointTrajectoryInput(ToolInputModel):
+    joint_handles: list[int] = Field(min_length=1, max_length=32)
+    waypoints: list[list[float]] = Field(min_length=1, max_length=1000)
+    mode: JointTrajectoryMode = JointTrajectoryMode.TARGET_POSITION
+    dwell_seconds: float = Field(default=0.0, ge=0.0, le=60.0)
+    motion_params: list[float] | None = None
+
+    @field_validator("waypoints")
+    @classmethod
+    def validate_waypoints(cls, value: list[list[float]]) -> list[list[float]]:
+        out: list[list[float]] = []
+        for waypoint in value:
+            normalized = [float(v) for v in waypoint]
+            if not normalized:
+                raise ValueError("waypoints cannot contain empty entries")
+            if any(not math.isfinite(v) for v in normalized):
+                raise ValueError("waypoints contain non-finite numbers")
+            out.append(normalized)
+        return out
+
+    @field_validator("motion_params")
+    @classmethod
+    def validate_motion_params(cls, value: list[float] | None) -> list[float] | None:
+        return _validate_float_list(value, field_name="motion_params", max_length=3)
+
+    @model_validator(mode="after")
+    def validate_waypoint_width(self) -> "ExecuteJointTrajectoryInput":
+        width = len(self.joint_handles)
+        for waypoint in self.waypoints:
+            if len(waypoint) != width:
+                raise ValueError("each waypoint must contain one value per joint handle")
+        return self
+
+
+class ExecuteCartesianWaypointsInput(ToolInputModel):
+    environment_handle: int
+    group_handle: int
+    target_handle: int
+    waypoints: list[list[float]] = Field(min_length=1, max_length=1000)
+    relative_to: int = -1
+    steps_per_waypoint: int = Field(default=1, ge=1, le=200)
+    dwell_seconds: float = Field(default=0.0, ge=0.0, le=60.0)
+
+    @field_validator("waypoints")
+    @classmethod
+    def validate_waypoints(cls, value: list[list[float]]) -> list[list[float]]:
+        return [_validate_vec3(item, field_name="waypoint") for item in value]
+
+
+class VerifyJointPositionsReachedInput(ToolInputModel):
+    joint_handles: list[int] = Field(min_length=1, max_length=32)
+    target_positions: list[float] = Field(min_length=1, max_length=32)
+    tolerance: float = Field(default=0.01, gt=0.0)
+
+    @field_validator("target_positions")
+    @classmethod
+    def validate_target_positions(cls, value: list[float]) -> list[float]:
+        return _validate_float_list(value, field_name="target_positions", min_length=1, max_length=32) or []
+
+    @model_validator(mode="after")
+    def validate_lengths(self) -> "VerifyJointPositionsReachedInput":
+        if len(self.joint_handles) != len(self.target_positions):
+            raise ValueError("joint_handles and target_positions must have the same length")
+        return self
+
+
+class VerifyObjectMovedInput(ToolInputModel):
+    handle: int
+    start_position: list[float] = Field(min_length=3, max_length=3)
+    min_distance: float = Field(default=0.01, gt=0.0)
+    relative_to: int = -1
+
+    @field_validator("start_position")
+    @classmethod
+    def validate_start_position(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="start_position")
+
+
+class VerifyObjectVelocityBelowInput(ToolInputModel):
+    handle: int
+    max_linear_speed: float = Field(default=0.01, ge=0.0)
+    max_angular_speed: float = Field(default=0.01, ge=0.0)
+
+
+class VerifyForceThresholdInput(ToolInputModel):
+    joint_handles: list[int] = Field(min_length=1, max_length=32)
+    min_abs_force: float = Field(default=0.1, ge=0.0)
+
+
+class AttachObjectToGripperInput(ToolInputModel):
+    object_handle: int
+    gripper_handle: int
+    keep_in_place: bool = True
+
+
+class DetachObjectInput(ToolInputModel):
+    object_handle: int
+    parent_handle: int = -1
+    keep_in_place: bool = True
+
+
+class GraspObjectInput(ToolInputModel):
+    object_handle: int
+    gripper_handle: int
+    signal_name: str | None = None
+    robot_path: str | None = None
+    close_gripper: bool = True
+    attach: bool = True
+    keep_in_place: bool = True
+
+    @field_validator("signal_name", "robot_path")
+    @classmethod
+    def validate_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text if text else None
+
+
+class ReleaseObjectInput(ToolInputModel):
+    object_handle: int
+    signal_name: str | None = None
+    robot_path: str | None = None
+    parent_handle: int = -1
+    open_gripper: bool = True
+    detach: bool = True
+    keep_in_place: bool = True
+
+    @field_validator("signal_name", "robot_path")
+    @classmethod
+    def validate_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text if text else None
+
+
+class GetObjectVelocityInput(ToolInputModel):
+    handle: int
+
+
+class ResetDynamicObjectInput(ToolInputModel):
+    handle: int
+    include_model: bool = True
+
+
+class SetShapeDynamicsInput(ToolInputModel):
+    handle: int
+    static: bool | None = None
+    respondable: bool | None = None
+    mass: float | None = Field(default=None, gt=0.0)
+    friction: float | None = Field(default=None, ge=0.0)
+
+
+class ReadProximitySensorInput(ToolInputModel):
+    handle: int
+
+
+class ReadForceSensorInput(ToolInputModel):
+    handle: int
+
+
+class GetVisionSensorImageInput(ToolInputModel):
+    handle: int
+    grayscale: bool = False
+    metadata_only: bool = True
+
+
+class CheckCollisionMonitorInput(ToolInputModel):
+    entity1: int
+    entity2: int
+    duration_s: float = Field(default=0.0, ge=0.0, le=600.0)
+    poll_interval_s: float = Field(default=0.05, gt=0.0, le=10.0)
+
+
+class CreatePointCloudSurfaceFromShapeInput(ToolInputModel):
+    shape_handle: int
+    grid_size: float = Field(default=0.02, gt=0.0)
+    point_size: float = Field(default=0.01, gt=0.0)
+    color: list[float] = Field(default_factory=lambda: [0.8, 0.8, 0.8], min_length=3, max_length=3)
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: list[float]) -> list[float]:
+        return _validate_color(value, field_name="color")
+
+
+class InsertPointsIntoPointCloudInput(ToolInputModel):
+    point_cloud_handle: int
+    points: list[list[float]] = Field(min_length=1, max_length=200000)
+    color: list[float] | None = Field(default=None, min_length=3, max_length=3)
+
+    @field_validator("points")
+    @classmethod
+    def validate_points(cls, value: list[list[float]]) -> list[list[float]]:
+        return [_validate_vec3(point, field_name="point") for point in value]
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: list[float] | None) -> list[float] | None:
+        if value is None:
+            return None
+        return _validate_color(value, field_name="color")
+
+
+class RemovePointsNearToolInput(ToolInputModel):
+    point_cloud_handle: int
+    tool_handle: int
+    radius: float = Field(gt=0.0)
+    tolerance: float = Field(default=0.0, ge=0.0)
+
+
+class GetPointCloudStatsInput(ToolInputModel):
+    point_cloud_handle: int
+
+
+class SimulatePolishingStepInput(ToolInputModel):
+    tool_handle: int
+    surface_cloud_handle: int
+    contact_radius: float = Field(gt=0.0)
+    removal_depth: float = Field(default=0.0, ge=0.0)
+
+
+class ExecutePolishingPathInput(ToolInputModel):
+    environment_handle: int
+    group_handle: int
+    target_handle: int
+    tool_handle: int
+    surface_cloud_handle: int
+    waypoints: list[list[float]] = Field(min_length=1, max_length=1000)
+    contact_radius: float = Field(gt=0.0)
+    removal_depth: float = Field(default=0.0, ge=0.0)
+    relative_to: int = -1
+    steps_per_waypoint: int = Field(default=1, ge=1, le=200)
+    dwell_seconds: float = Field(default=0.0, ge=0.0, le=60.0)
+
+    @field_validator("waypoints")
+    @classmethod
+    def validate_waypoints(cls, value: list[list[float]]) -> list[list[float]]:
+        return [_validate_vec3(item, field_name="waypoint") for item in value]
 
 
 def as_payload(model: ToolInputModel) -> dict[str, Any]:

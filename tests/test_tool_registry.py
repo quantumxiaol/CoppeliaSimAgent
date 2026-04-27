@@ -39,6 +39,16 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("rename_object", names)
         self.assertIn("set_object_color", names)
         self.assertIn("set_joint_target_velocity", names)
+        self.assertIn("step_simulation", names)
+        self.assertIn("wait_until_object_pose_stable", names)
+        self.assertIn("execute_joint_trajectory", names)
+        self.assertIn("execute_cartesian_waypoints", names)
+        self.assertIn("verify_object_moved", names)
+        self.assertIn("attach_object_to_gripper", names)
+        self.assertIn("get_object_velocity", names)
+        self.assertIn("read_force_sensor", names)
+        self.assertIn("create_point_cloud_surface_from_shape", names)
+        self.assertIn("simulate_polishing_step", names)
 
     def test_unknown_tool_raises(self) -> None:
         with self.assertRaises(KeyError):
@@ -57,6 +67,7 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("stop_youbot_base", names)
         self.assertIn("configure_abb_arm_drive", names)
         self.assertIn("start_simulation", names)
+        self.assertIn("execute_polishing_path", names)
 
 
 if __name__ == "__main__":

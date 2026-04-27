@@ -7,6 +7,8 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from ..tools.dynamics import get_object_velocity, reset_dynamic_object, set_shape_dynamics
+from ..tools.grasp import attach_object_to_gripper, detach_object, grasp_object, release_object
 from ..tools.kinematics import (
     actuate_gripper,
     actuate_youbot_gripper,
@@ -32,6 +34,14 @@ from ..tools.kinematics import (
     spawn_waypoint,
 )
 from ..tools.models import load_model, set_parent_child
+from ..tools.point_cloud import (
+    create_point_cloud_surface_from_shape,
+    execute_polishing_path,
+    get_point_cloud_stats,
+    insert_points_into_point_cloud,
+    remove_points_near_tool,
+    simulate_polishing_step,
+)
 from ..tools.primitives import (
     duplicate_object,
     remove_object,
@@ -41,13 +51,22 @@ from ..tools.primitives import (
     spawn_cuboid,
     spawn_primitive,
 )
+from ..tools.runtime import step_simulation, wait_seconds, wait_until_object_pose_stable, wait_until_state
 from ..tools.scene import check_collision, find_objects, get_object_pose, get_relative_pose, get_scene_graph
+from ..tools.sensors import check_collision_monitor, get_vision_sensor_image, read_force_sensor, read_proximity_sensor
 from ..tools.simulation import (
     get_plugin_status,
     get_simulation_state,
     pause_simulation,
     start_simulation,
     stop_simulation,
+)
+from ..tools.trajectory import execute_cartesian_waypoints, execute_joint_trajectory
+from ..tools.verification import (
+    verify_force_threshold,
+    verify_joint_positions_reached,
+    verify_object_moved,
+    verify_object_velocity_below,
 )
 
 
@@ -515,6 +534,328 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             joint2_open=joint2_open,
             joint2_closed=joint2_closed,
             motion_params=motion_params,
+        )
+
+    @mcp.tool(name="step_simulation", description="Advance simulation by remote stepping ticks when supported.")
+    def step_simulation_tool(
+        steps: int = 1,
+        start_if_stopped: bool = True,
+        keep_stepping_enabled: bool = True,
+    ) -> dict[str, Any]:
+        return step_simulation(
+            steps=steps,
+            start_if_stopped=start_if_stopped,
+            keep_stepping_enabled=keep_stepping_enabled,
+        )
+
+    @mcp.tool(name="wait_seconds", description="Wait in the external agent process.")
+    def wait_seconds_tool(seconds: float) -> dict[str, float]:
+        return wait_seconds(seconds=seconds)
+
+    @mcp.tool(name="wait_until_state", description="Poll simulation lifecycle state until target state.")
+    def wait_until_state_tool(
+        target_state: str,
+        timeout_s: float = 5.0,
+        poll_interval_s: float = 0.05,
+    ) -> dict[str, Any]:
+        return wait_until_state(
+            target_state=target_state,
+            timeout_s=timeout_s,
+            poll_interval_s=poll_interval_s,
+        )
+
+    @mcp.tool(name="wait_until_object_pose_stable", description="Wait until an object's pose is stable.")
+    def wait_until_object_pose_stable_tool(
+        handle: int,
+        position_tolerance: float = 0.001,
+        orientation_tolerance_deg: float = 0.1,
+        stable_duration_s: float = 0.25,
+        timeout_s: float = 5.0,
+        poll_interval_s: float = 0.05,
+        relative_to: int = -1,
+    ) -> dict[str, Any]:
+        return wait_until_object_pose_stable(
+            handle=handle,
+            position_tolerance=position_tolerance,
+            orientation_tolerance_deg=orientation_tolerance_deg,
+            stable_duration_s=stable_duration_s,
+            timeout_s=timeout_s,
+            poll_interval_s=poll_interval_s,
+            relative_to=relative_to,
+        )
+
+    @mcp.tool(name="execute_joint_trajectory", description="Execute joint-space waypoints.")
+    def execute_joint_trajectory_tool(
+        joint_handles: list[int],
+        waypoints: list[list[float]],
+        mode: str = "target_position",
+        dwell_seconds: float = 0.0,
+        motion_params: list[float] | None = None,
+    ) -> dict[str, Any]:
+        return execute_joint_trajectory(
+            joint_handles=joint_handles,
+            waypoints=waypoints,
+            mode=mode,
+            dwell_seconds=dwell_seconds,
+            motion_params=motion_params,
+        )
+
+    @mcp.tool(name="execute_cartesian_waypoints", description="Move an IK target through Cartesian waypoints.")
+    def execute_cartesian_waypoints_tool(
+        environment_handle: int,
+        group_handle: int,
+        target_handle: int,
+        waypoints: list[list[float]],
+        relative_to: int = -1,
+        steps_per_waypoint: int = 1,
+        dwell_seconds: float = 0.0,
+    ) -> dict[str, Any]:
+        return execute_cartesian_waypoints(
+            environment_handle=environment_handle,
+            group_handle=group_handle,
+            target_handle=target_handle,
+            waypoints=waypoints,
+            relative_to=relative_to,
+            steps_per_waypoint=steps_per_waypoint,
+            dwell_seconds=dwell_seconds,
+        )
+
+    @mcp.tool(name="get_object_velocity", description="Read object linear/angular velocity.")
+    def get_object_velocity_tool(handle: int) -> dict[str, Any]:
+        return get_object_velocity(handle=handle)
+
+    @mcp.tool(name="reset_dynamic_object", description="Reset dynamic state for an object/model.")
+    def reset_dynamic_object_tool(handle: int, include_model: bool = True) -> dict[str, Any]:
+        return reset_dynamic_object(handle=handle, include_model=include_model)
+
+    @mcp.tool(name="set_shape_dynamics", description="Set shape dynamic flags and optional mass/friction.")
+    def set_shape_dynamics_tool(
+        handle: int,
+        static: bool | None = None,
+        respondable: bool | None = None,
+        mass: float | None = None,
+        friction: float | None = None,
+    ) -> dict[str, Any]:
+        return set_shape_dynamics(
+            handle=handle,
+            static=static,
+            respondable=respondable,
+            mass=mass,
+            friction=friction,
+        )
+
+    @mcp.tool(name="verify_joint_positions_reached", description="Verify joints reached target positions.")
+    def verify_joint_positions_reached_tool(
+        joint_handles: list[int],
+        target_positions: list[float],
+        tolerance: float = 0.01,
+    ) -> dict[str, Any]:
+        return verify_joint_positions_reached(
+            joint_handles=joint_handles,
+            target_positions=target_positions,
+            tolerance=tolerance,
+        )
+
+    @mcp.tool(name="verify_object_moved", description="Verify an object moved from a start position.")
+    def verify_object_moved_tool(
+        handle: int,
+        start_position: list[float],
+        min_distance: float = 0.01,
+        relative_to: int = -1,
+    ) -> dict[str, Any]:
+        return verify_object_moved(
+            handle=handle,
+            start_position=start_position,
+            min_distance=min_distance,
+            relative_to=relative_to,
+        )
+
+    @mcp.tool(name="verify_object_velocity_below", description="Verify object velocity is below thresholds.")
+    def verify_object_velocity_below_tool(
+        handle: int,
+        max_linear_speed: float = 0.01,
+        max_angular_speed: float = 0.01,
+    ) -> dict[str, Any]:
+        return verify_object_velocity_below(
+            handle=handle,
+            max_linear_speed=max_linear_speed,
+            max_angular_speed=max_angular_speed,
+        )
+
+    @mcp.tool(name="verify_force_threshold", description="Verify joint force threshold.")
+    def verify_force_threshold_tool(joint_handles: list[int], min_abs_force: float = 0.1) -> dict[str, Any]:
+        return verify_force_threshold(joint_handles=joint_handles, min_abs_force=min_abs_force)
+
+    @mcp.tool(name="attach_object_to_gripper", description="Parent an object under a gripper/tip handle.")
+    def attach_object_to_gripper_tool(
+        object_handle: int,
+        gripper_handle: int,
+        keep_in_place: bool = True,
+    ) -> dict[str, Any]:
+        return attach_object_to_gripper(
+            object_handle=object_handle,
+            gripper_handle=gripper_handle,
+            keep_in_place=keep_in_place,
+        )
+
+    @mcp.tool(name="detach_object", description="Detach an object to world or another parent.")
+    def detach_object_tool(
+        object_handle: int,
+        parent_handle: int = -1,
+        keep_in_place: bool = True,
+    ) -> dict[str, Any]:
+        return detach_object(object_handle=object_handle, parent_handle=parent_handle, keep_in_place=keep_in_place)
+
+    @mcp.tool(name="grasp_object", description="Close a gripper command path and optionally attach an object.")
+    def grasp_object_tool(
+        object_handle: int,
+        gripper_handle: int,
+        signal_name: str | None = None,
+        robot_path: str | None = None,
+        close_gripper: bool = True,
+        attach: bool = True,
+        keep_in_place: bool = True,
+    ) -> dict[str, Any]:
+        return grasp_object(
+            object_handle=object_handle,
+            gripper_handle=gripper_handle,
+            signal_name=signal_name,
+            robot_path=robot_path,
+            close_gripper=close_gripper,
+            attach=attach,
+            keep_in_place=keep_in_place,
+        )
+
+    @mcp.tool(name="release_object", description="Open a gripper command path and optionally detach an object.")
+    def release_object_tool(
+        object_handle: int,
+        signal_name: str | None = None,
+        robot_path: str | None = None,
+        parent_handle: int = -1,
+        open_gripper: bool = True,
+        detach: bool = True,
+        keep_in_place: bool = True,
+    ) -> dict[str, Any]:
+        return release_object(
+            object_handle=object_handle,
+            signal_name=signal_name,
+            robot_path=robot_path,
+            parent_handle=parent_handle,
+            open_gripper=open_gripper,
+            detach=detach,
+            keep_in_place=keep_in_place,
+        )
+
+    @mcp.tool(name="read_proximity_sensor", description="Read one proximity sensor.")
+    def read_proximity_sensor_tool(handle: int) -> dict[str, Any]:
+        return read_proximity_sensor(handle=handle)
+
+    @mcp.tool(name="read_force_sensor", description="Read one force sensor.")
+    def read_force_sensor_tool(handle: int) -> dict[str, Any]:
+        return read_force_sensor(handle=handle)
+
+    @mcp.tool(name="get_vision_sensor_image", description="Read one vision sensor image or metadata.")
+    def get_vision_sensor_image_tool(
+        handle: int,
+        grayscale: bool = False,
+        metadata_only: bool = True,
+    ) -> dict[str, Any]:
+        return get_vision_sensor_image(handle=handle, grayscale=grayscale, metadata_only=metadata_only)
+
+    @mcp.tool(name="check_collision_monitor", description="Monitor a collision pair for a duration.")
+    def check_collision_monitor_tool(
+        entity1: int,
+        entity2: int,
+        duration_s: float = 0.0,
+        poll_interval_s: float = 0.05,
+    ) -> dict[str, Any]:
+        return check_collision_monitor(
+            entity1=entity1,
+            entity2=entity2,
+            duration_s=duration_s,
+            poll_interval_s=poll_interval_s,
+        )
+
+    @mcp.tool(name="create_point_cloud_surface_from_shape", description="Create a point-cloud surface from a shape.")
+    def create_point_cloud_surface_from_shape_tool(
+        shape_handle: int,
+        grid_size: float = 0.02,
+        point_size: float = 0.01,
+        color: list[float] | None = None,
+    ) -> dict[str, Any]:
+        return create_point_cloud_surface_from_shape(
+            shape_handle=shape_handle,
+            grid_size=grid_size,
+            point_size=point_size,
+            color=color,
+        )
+
+    @mcp.tool(name="insert_points_into_point_cloud", description="Insert points into a point cloud.")
+    def insert_points_into_point_cloud_tool(
+        point_cloud_handle: int,
+        points: list[list[float]],
+        color: list[float] | None = None,
+    ) -> dict[str, Any]:
+        return insert_points_into_point_cloud(point_cloud_handle=point_cloud_handle, points=points, color=color)
+
+    @mcp.tool(name="remove_points_near_tool", description="Remove point-cloud points near a tool.")
+    def remove_points_near_tool_tool(
+        point_cloud_handle: int,
+        tool_handle: int,
+        radius: float,
+        tolerance: float = 0.0,
+    ) -> dict[str, Any]:
+        return remove_points_near_tool(
+            point_cloud_handle=point_cloud_handle,
+            tool_handle=tool_handle,
+            radius=radius,
+            tolerance=tolerance,
+        )
+
+    @mcp.tool(name="get_point_cloud_stats", description="Read known point-cloud stats.")
+    def get_point_cloud_stats_tool(point_cloud_handle: int) -> dict[str, Any]:
+        return get_point_cloud_stats(point_cloud_handle=point_cloud_handle)
+
+    @mcp.tool(name="simulate_polishing_step", description="Remove surface points near the polishing tool.")
+    def simulate_polishing_step_tool(
+        tool_handle: int,
+        surface_cloud_handle: int,
+        contact_radius: float,
+        removal_depth: float = 0.0,
+    ) -> dict[str, Any]:
+        return simulate_polishing_step(
+            tool_handle=tool_handle,
+            surface_cloud_handle=surface_cloud_handle,
+            contact_radius=contact_radius,
+            removal_depth=removal_depth,
+        )
+
+    @mcp.tool(name="execute_polishing_path", description="Move an IK target and polish at each waypoint.")
+    def execute_polishing_path_tool(
+        environment_handle: int,
+        group_handle: int,
+        target_handle: int,
+        tool_handle: int,
+        surface_cloud_handle: int,
+        waypoints: list[list[float]],
+        contact_radius: float,
+        removal_depth: float = 0.0,
+        relative_to: int = -1,
+        steps_per_waypoint: int = 1,
+        dwell_seconds: float = 0.0,
+    ) -> dict[str, Any]:
+        return execute_polishing_path(
+            environment_handle=environment_handle,
+            group_handle=group_handle,
+            target_handle=target_handle,
+            tool_handle=tool_handle,
+            surface_cloud_handle=surface_cloud_handle,
+            waypoints=waypoints,
+            contact_radius=contact_radius,
+            removal_depth=removal_depth,
+            relative_to=relative_to,
+            steps_per_waypoint=steps_per_waypoint,
+            dwell_seconds=dwell_seconds,
         )
 
     return mcp

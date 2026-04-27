@@ -24,7 +24,17 @@ from .kinematics import (
     setup_youbot_arm_ik,
     spawn_waypoint,
 )
+from .dynamics import get_object_velocity, reset_dynamic_object, set_shape_dynamics
+from .grasp import attach_object_to_gripper, detach_object, grasp_object, release_object
 from .models import load_model, load_robot_model, set_parent_child
+from .point_cloud import (
+    create_point_cloud_surface_from_shape,
+    execute_polishing_path,
+    get_point_cloud_stats,
+    insert_points_into_point_cloud,
+    remove_points_near_tool,
+    simulate_polishing_step,
+)
 from .primitives import (
     duplicate_object,
     remove_object,
@@ -42,6 +52,8 @@ from .scene import (
     get_relative_pose,
     get_scene_graph,
 )
+from .runtime import step_simulation, wait_seconds, wait_until_object_pose_stable, wait_until_state
+from .sensors import check_collision_monitor, get_vision_sensor_image, read_force_sensor, read_proximity_sensor
 from .simulation import (
     get_plugin_status,
     get_simulation_state,
@@ -49,34 +61,59 @@ from .simulation import (
     start_simulation,
     stop_simulation,
 )
+from .trajectory import execute_cartesian_waypoints, execute_joint_trajectory
+from .verification import (
+    verify_force_threshold,
+    verify_joint_positions_reached,
+    verify_object_moved,
+    verify_object_velocity_below,
+)
 
 __all__ = [
     "actuate_gripper",
     "actuate_youbot_gripper",
     "assert_no_collision",
+    "attach_object_to_gripper",
     "check_collision",
+    "check_collision_monitor",
     "configure_abb_arm_drive",
+    "create_point_cloud_surface_from_shape",
+    "detach_object",
     "drive_youbot_base",
     "duplicate_object",
+    "execute_cartesian_waypoints",
+    "execute_joint_trajectory",
+    "execute_polishing_path",
     "find_objects",
+    "get_vision_sensor_image",
     "get_joint_dyn_ctrl_mode",
     "get_joint_force",
     "get_joint_mode",
+    "get_object_velocity",
     "get_object_pose",
+    "get_point_cloud_stats",
     "get_plugin_status",
     "get_joint_position",
     "get_relative_pose",
     "get_scene_graph",
     "get_simulation_state",
     "get_joint_target_force",
+    "grasp_object",
+    "insert_points_into_point_cloud",
     "load_model",
     "load_robot_model",
     "move_ik_target",
     "pause_simulation",
+    "read_force_sensor",
+    "read_proximity_sensor",
     "rename_object",
     "remove_object",
+    "remove_points_near_tool",
+    "release_object",
+    "reset_dynamic_object",
     "set_object_color",
     "set_object_pose",
+    "set_shape_dynamics",
     "set_joint_position",
     "set_joint_dyn_ctrl_mode",
     "set_joint_mode",
@@ -94,4 +131,13 @@ __all__ = [
     "spawn_cuboid",
     "spawn_primitive",
     "spawn_waypoint",
+    "step_simulation",
+    "simulate_polishing_step",
+    "verify_force_threshold",
+    "verify_joint_positions_reached",
+    "verify_object_moved",
+    "verify_object_velocity_below",
+    "wait_seconds",
+    "wait_until_object_pose_stable",
+    "wait_until_state",
 ]
