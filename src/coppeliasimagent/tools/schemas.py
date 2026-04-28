@@ -607,6 +607,7 @@ class SetupAbbArmIKInput(ToolInputModel):
     verify_motion: bool = True
     test_offset: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.02], min_length=3, max_length=3)
     restore_target: bool = True
+    detach_target_to_world: bool = True
 
     @field_validator("robot_path", "base_path", "tip_path", "target_path")
     @classmethod

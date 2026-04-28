@@ -520,6 +520,7 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         verify_motion: bool = True,
         test_offset: list[float] | None = None,
         restore_target: bool = True,
+        detach_target_to_world: bool = True,
     ) -> dict[str, Any]:
         return setup_abb_arm_ik(
             robot_path=robot_path,
@@ -530,6 +531,7 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             verify_motion=verify_motion,
             test_offset=test_offset,
             restore_target=restore_target,
+            detach_target_to_world=detach_target_to_world,
         )
 
     @mcp.tool(name="move_ik_target", description="Move IK target and solve IK.")

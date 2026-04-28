@@ -1093,12 +1093,22 @@ class TestTools(unittest.TestCase):
                 target_path="/IRB4600/IkTarget",
                 verify_motion=True,
             )
+            ik_again = kinematics.setup_abb_arm_ik(
+                robot_path="/IRB4600",
+                tip_path="/IRB4600/IkTip",
+                target_path="/IRB4600/IkTarget",
+                verify_motion=False,
+            )
 
         self.assertEqual(joints["joint_handles"], [31, 32, 33, 34, 35, 36])
         self.assertEqual(joints["count"], 6)
         self.assertEqual(ik["robot_handle"], 30)
         self.assertEqual(ik["tip_handle"], 38)
         self.assertEqual(ik["target_handle"], 39)
+        self.assertEqual(ik["target_parent_before"], 30)
+        self.assertEqual(ik["target_parent_after"], -1)
+        self.assertTrue(ik["target_detached_to_world"])
+        self.assertEqual(ik_again["resolved_target_path"], "/IkTarget")
         self.assertIsNotNone(ik["verification"])
 
 

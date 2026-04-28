@@ -168,6 +168,21 @@ def _resolve_existing_handles(sim: object, object_paths: list[str]) -> tuple[lis
     return handles, missing
 
 
+def _resolve_ik_target_handle(sim: object, target_path: str) -> tuple[int, str]:
+    handle = _resolve_object_handle(sim, target_path, no_error=True)
+    if handle != -1:
+        return handle, target_path
+
+    target_name = target_path.rstrip("/").rsplit("/", 1)[-1]
+    if target_name:
+        world_path = f"/{target_name}"
+        handle = _resolve_object_handle(sim, world_path, no_error=True)
+        if handle != -1:
+            return handle, world_path
+
+    raise RuntimeError(f"Object not found: {target_path}")
+
+
 def _reset_dynamic_object(sim: object, handle: int, *, include_model: bool = True) -> int:
     object_handle = int(handle)
     if include_model and hasattr(sim, "handleflag_model"):
@@ -852,6 +867,7 @@ def setup_abb_arm_ik(
     verify_motion: bool = True,
     test_offset: list[float] | None = None,
     restore_target: bool = True,
+    detach_target_to_world: bool = True,
 ) -> dict[str, object]:
     """Set up ABB IRB4600 IK using the model's existing IkTip/IkTarget dummies."""
     try:
@@ -865,6 +881,7 @@ def setup_abb_arm_ik(
                 "verify_motion": verify_motion,
                 "test_offset": test_offset if test_offset is not None else [0.0, 0.0, 0.02],
                 "restore_target": restore_target,
+                "detach_target_to_world": detach_target_to_world,
             }
         )
     except ValidationError as exc:
@@ -874,7 +891,14 @@ def setup_abb_arm_ik(
     robot_handle = _resolve_object_handle(sim, payload.robot_path)
     base_handle = _resolve_object_handle(sim, payload.base_path) if payload.base_path else robot_handle
     tip_handle = _resolve_object_handle(sim, payload.tip_path)
-    target_handle = _resolve_object_handle(sim, payload.target_path)
+    target_handle, resolved_target_path = _resolve_ik_target_handle(sim, payload.target_path)
+
+    target_parent_before = int(sim.getObjectParent(target_handle)) if hasattr(sim, "getObjectParent") else None
+    target_detached_to_world = False
+    if payload.detach_target_to_world and target_parent_before not in (None, -1):
+        sim.setObjectParent(target_handle, -1, True)
+        target_detached_to_world = True
+    target_parent_after = int(sim.getObjectParent(target_handle)) if hasattr(sim, "getObjectParent") else None
 
     target_before = [float(v) for v in sim.getObjectPosition(target_handle, -1)]
     tip_before = [float(v) for v in sim.getObjectPosition(tip_handle, -1)]
@@ -924,6 +948,10 @@ def setup_abb_arm_ik(
         "target_handle": target_handle,
         "tip_path": payload.tip_path,
         "target_path": payload.target_path,
+        "resolved_target_path": resolved_target_path,
+        "target_parent_before": target_parent_before,
+        "target_parent_after": target_parent_after,
+        "target_detached_to_world": target_detached_to_world,
         "verification": verification,
         **ik_info,
     }
