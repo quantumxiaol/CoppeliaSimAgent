@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import math
 
 from pydantic import ValidationError
 
@@ -13,6 +14,7 @@ from .schemas import (
     CreatePointCloudSurfaceFromShapeInput,
     CreatePointCloudPotteryCylinderInput,
     ExecutePolishingPathInput,
+    ExecutePolishingGrooveInput,
     GetPointCloudStatsInput,
     InsertPointsIntoPointCloudInput,
     RemovePointsNearToolInput,
@@ -36,6 +38,44 @@ def _rgb255(color: list[float] | None) -> list[int] | None:
 
 def _flat_points(points: list[list[float]]) -> list[float]:
     return [float(value) for point in points for value in point]
+
+
+def _generate_cylinder_shell_points(
+    *,
+    radius: float,
+    height: float,
+    center: list[float],
+    grid_size: float,
+    layers: int,
+    wall_thickness: float,
+    angular_step_deg: float | None,
+    include_caps: bool,
+) -> list[list[float]]:
+    angular_step = math.radians(angular_step_deg if angular_step_deg is not None else max(2.0, math.degrees(grid_size / radius)))
+    z_steps = max(1, int(round(height / grid_size)))
+    z_values = [center[2] - height / 2.0 + i * height / z_steps for i in range(z_steps + 1)]
+    if layers == 1:
+        radii = [radius]
+    else:
+        radii = [radius - wall_thickness * i / (layers - 1) for i in range(layers)]
+        radii = [r for r in radii if r > 0.0]
+
+    points: list[list[float]] = []
+    angle_count = max(8, int(math.ceil((2.0 * math.pi) / angular_step)))
+    for r in radii:
+        for zi, z in enumerate(z_values):
+            for ai in range(angle_count):
+                theta = (2.0 * math.pi * ai) / angle_count
+                points.append([center[0] + r * math.cos(theta), center[1] + r * math.sin(theta), z])
+            if include_caps and zi in (0, len(z_values) - 1) and len(radii) > 1:
+                radial_steps = max(1, int(round(r / grid_size)))
+                for ri in range(1, radial_steps):
+                    cap_r = r * ri / radial_steps
+                    cap_angles = max(8, int(math.ceil((2.0 * math.pi * cap_r) / grid_size)))
+                    for ai in range(cap_angles):
+                        theta = (2.0 * math.pi * ai) / cap_angles
+                        points.append([center[0] + cap_r * math.cos(theta), center[1] + cap_r * math.sin(theta), z])
+    return points
 
 
 def create_point_cloud_surface_from_shape(
@@ -201,6 +241,11 @@ def create_point_cloud_pottery_cylinder(
     color: list[float] | None = None,
     alias: str = "point_cloud_pottery_cylinder",
     keep_source_shape: bool = False,
+    layers: int = 1,
+    wall_thickness: float = 0.0,
+    angular_step_deg: float | None = None,
+    include_caps: bool = True,
+    use_explicit_points: bool = False,
 ) -> dict[str, object]:
     """Create a point-cloud cylinder and hide/remove its source mesh by default."""
     try:
@@ -214,10 +259,49 @@ def create_point_cloud_pottery_cylinder(
                 "color": color if color is not None else [0.9, 0.65, 0.35],
                 "alias": alias,
                 "keep_source_shape": keep_source_shape,
+                "layers": layers,
+                "wall_thickness": wall_thickness,
+                "angular_step_deg": angular_step_deg,
+                "include_caps": include_caps,
+                "use_explicit_points": use_explicit_points,
             }
         )
     except ValidationError as exc:
         raise _validation_error(exc) from exc
+
+    if payload.use_explicit_points or payload.layers > 1:
+        sim = get_sim()
+        if not hasattr(sim, "createPointCloud") or not hasattr(sim, "insertPointsIntoPointCloud"):
+            raise RuntimeError("Current CoppeliaSim API does not expose explicit point-cloud insertion")
+        points = _generate_cylinder_shell_points(
+            radius=payload.radius,
+            height=payload.height,
+            center=payload.center,
+            grid_size=payload.grid_size,
+            layers=payload.layers,
+            wall_thickness=payload.wall_thickness,
+            angular_step_deg=payload.angular_step_deg,
+            include_caps=payload.include_caps,
+        )
+        pc_handle = int(sim.createPointCloud(payload.grid_size, 1, 0, payload.point_size))
+        total = int(sim.insertPointsIntoPointCloud(pc_handle, 0, _flat_points(points), _rgb255(payload.color)))
+        _POINT_CLOUD_COUNTS[pc_handle] = total
+        return {
+            "point_cloud_handle": pc_handle,
+            "alias": payload.alias,
+            "radius": payload.radius,
+            "height": payload.height,
+            "center": payload.center,
+            "grid_size": payload.grid_size,
+            "point_size": payload.point_size,
+            "point_count": total,
+            "generated_points": len(points),
+            "layers": payload.layers,
+            "wall_thickness": payload.wall_thickness,
+            "source_shape_handle": None,
+            "source_shape_action": "not_created",
+            "source_shape_kept": False,
+        }
 
     source_handle = spawn_primitive(
         primitive="cylinder",
@@ -314,6 +398,54 @@ def simulate_polishing_contact(
         "tolerance": payload.removal_depth,
         "point_count": total,
         "removed_estimate": None if previous is None else max(0, previous - total),
+    }
+
+
+def execute_polishing_groove(
+    surface_cloud_handle: int,
+    start_position: list[float],
+    end_position: list[float],
+    contact_radius: float,
+    removal_depth: float = 0.0,
+    steps: int = 12,
+) -> dict[str, object]:
+    """Cut a visible groove by applying contact removal along a straight segment."""
+    try:
+        payload = ExecutePolishingGrooveInput.model_validate(
+            {
+                "surface_cloud_handle": surface_cloud_handle,
+                "start_position": start_position,
+                "end_position": end_position,
+                "contact_radius": contact_radius,
+                "removal_depth": removal_depth,
+                "steps": steps,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    results: list[dict[str, object]] = []
+    for i in range(payload.steps):
+        ratio = i / (payload.steps - 1)
+        position = [
+            payload.start_position[j] + (payload.end_position[j] - payload.start_position[j]) * ratio
+            for j in range(3)
+        ]
+        results.append(
+            simulate_polishing_contact(
+                surface_cloud_handle=payload.surface_cloud_handle,
+                tool_position=position,
+                contact_radius=payload.contact_radius,
+                removal_depth=payload.removal_depth,
+            )
+        )
+    return {
+        "surface_cloud_handle": payload.surface_cloud_handle,
+        "steps": payload.steps,
+        "start_position": payload.start_position,
+        "end_position": payload.end_position,
+        "final_point_count": _POINT_CLOUD_COUNTS.get(payload.surface_cloud_handle),
+        "polish_results": results,
     }
 
 

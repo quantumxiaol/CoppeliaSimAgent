@@ -39,6 +39,7 @@ from ..tools.models import load_model, set_parent_child
 from ..tools.point_cloud import (
     create_point_cloud_pottery_cylinder,
     create_point_cloud_surface_from_shape,
+    execute_polishing_groove,
     execute_polishing_path,
     get_point_cloud_stats,
     insert_points_into_point_cloud,
@@ -850,6 +851,11 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         color: list[float] | None = None,
         alias: str = "point_cloud_pottery_cylinder",
         keep_source_shape: bool = False,
+        layers: int = 1,
+        wall_thickness: float = 0.0,
+        angular_step_deg: float | None = None,
+        include_caps: bool = True,
+        use_explicit_points: bool = False,
     ) -> dict[str, Any]:
         return create_point_cloud_pottery_cylinder(
             radius=radius,
@@ -860,6 +866,11 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             color=color,
             alias=alias,
             keep_source_shape=keep_source_shape,
+            layers=layers,
+            wall_thickness=wall_thickness,
+            angular_step_deg=angular_step_deg,
+            include_caps=include_caps,
+            use_explicit_points=use_explicit_points,
         )
 
     @mcp.tool(name="insert_points_into_point_cloud", description="Insert points into a point cloud.")
@@ -914,6 +925,24 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             tool_position=tool_position,
             contact_radius=contact_radius,
             removal_depth=removal_depth,
+        )
+
+    @mcp.tool(name="execute_polishing_groove", description="Cut a visible point-cloud groove along a line segment.")
+    def execute_polishing_groove_tool(
+        surface_cloud_handle: int,
+        start_position: list[float],
+        end_position: list[float],
+        contact_radius: float,
+        removal_depth: float = 0.0,
+        steps: int = 12,
+    ) -> dict[str, Any]:
+        return execute_polishing_groove(
+            surface_cloud_handle=surface_cloud_handle,
+            start_position=start_position,
+            end_position=end_position,
+            contact_radius=contact_radius,
+            removal_depth=removal_depth,
+            steps=steps,
         )
 
     @mcp.tool(name="execute_polishing_path", description="Move an IK target and polish at each waypoint.")

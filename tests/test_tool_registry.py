@@ -51,6 +51,7 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("create_point_cloud_pottery_cylinder", names)
         self.assertIn("simulate_polishing_step", names)
         self.assertIn("simulate_polishing_contact", names)
+        self.assertIn("execute_polishing_groove", names)
         self.assertIn("set_object_visibility", names)
         self.assertIn("find_robot_joints", names)
         self.assertIn("setup_abb_arm_ik", names)

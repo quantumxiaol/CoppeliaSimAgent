@@ -1018,6 +1018,15 @@ class TestTools(unittest.TestCase):
                 center=[0.3, 0.0, 0.1],
                 keep_source_shape=False,
             )
+            dense_pottery = point_cloud.create_point_cloud_pottery_cylinder(
+                radius=0.1,
+                height=0.2,
+                center=[0.3, 0.0, 0.1],
+                layers=3,
+                wall_thickness=0.03,
+                angular_step_deg=15.0,
+                use_explicit_points=True,
+            )
             inserted = point_cloud.insert_points_into_point_cloud(
                 pc["point_cloud_handle"],
                 [[0.0, 0.0, 0.0], [0.01, 0.0, 0.0]],
@@ -1027,6 +1036,13 @@ class TestTools(unittest.TestCase):
                 surface_cloud_handle=pc["point_cloud_handle"],
                 tool_position=[0.0, 0.0, 0.0],
                 contact_radius=0.03,
+            )
+            groove = point_cloud.execute_polishing_groove(
+                surface_cloud_handle=pc["point_cloud_handle"],
+                start_position=[0.0, 0.0, 0.0],
+                end_position=[0.05, 0.0, 0.0],
+                contact_radius=0.03,
+                steps=3,
             )
             stats = point_cloud.get_point_cloud_stats(pc["point_cloud_handle"])
 
@@ -1044,10 +1060,14 @@ class TestTools(unittest.TestCase):
         self.assertEqual(sim.object_int_params[(5, sim.objintparam_visibility_layer)], 0)
         self.assertEqual(pottery["source_shape_action"], "removed")
         self.assertNotIn(pottery["source_shape_handle"], sim.object_names)
+        self.assertEqual(dense_pottery["source_shape_action"], "not_created")
+        self.assertEqual(dense_pottery["layers"], 3)
+        self.assertGreater(dense_pottery["generated_points"], 0)
         self.assertEqual(inserted["inserted_points"], 2)
         self.assertLess(removed["point_count"], inserted["point_count"])
         self.assertLess(contact["point_count"], removed["point_count"])
-        self.assertEqual(stats["known_point_count"], contact["point_count"])
+        self.assertEqual(groove["steps"], 3)
+        self.assertEqual(stats["known_point_count"], groove["final_point_count"])
 
     def test_robot_joint_discovery_and_abb_ik_setup(self) -> None:
         sim = FakeSim()

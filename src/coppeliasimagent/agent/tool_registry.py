@@ -39,6 +39,7 @@ from ..tools.models import load_model, set_parent_child
 from ..tools.point_cloud import (
     create_point_cloud_surface_from_shape,
     create_point_cloud_pottery_cylinder,
+    execute_polishing_groove,
     execute_polishing_path,
     get_point_cloud_stats,
     insert_points_into_point_cloud,
@@ -87,6 +88,7 @@ from ..tools.schemas import (
     DuplicateObjectInput,
     ExecuteCartesianWaypointsInput,
     ExecuteJointTrajectoryInput,
+    ExecutePolishingGrooveInput,
     ExecutePolishingPathInput,
     FindRobotJointsInput,
     FindObjectsInput,
@@ -612,6 +614,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Move an IK target along a path and run a polishing point-removal step at each waypoint.",
         input_model=ExecutePolishingPathInput,
         handler=execute_polishing_path,
+    ),
+    "execute_polishing_groove": ToolDefinition(
+        name="execute_polishing_groove",
+        description="Cut a visible point-cloud groove by removing points along a straight contact segment.",
+        input_model=ExecutePolishingGrooveInput,
+        handler=execute_polishing_groove,
     ),
 }
 

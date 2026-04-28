@@ -125,6 +125,7 @@ python skills/toolcli.py list
 - `get_point_cloud_stats`
 - `simulate_polishing_step`
 - `simulate_polishing_contact`
+- `execute_polishing_groove`
 - `execute_polishing_path`
 
 运行态 live 验证脚本：

@@ -421,12 +421,13 @@ uv run test/live_task_point_cloud_polishing.py
 ### 点云打磨
 
 - `create_point_cloud_surface_from_shape(shape_handle, grid_size, point_size, color, hide_source_shape, remove_source_shape)`
-- `create_point_cloud_pottery_cylinder(radius, height, center, grid_size, point_size, color, alias, keep_source_shape)`
+- `create_point_cloud_pottery_cylinder(radius, height, center, grid_size, point_size, color, alias, keep_source_shape, layers, wall_thickness, angular_step_deg, include_caps, use_explicit_points)`
 - `insert_points_into_point_cloud(point_cloud_handle, points, color)`
 - `remove_points_near_tool(point_cloud_handle, tool_handle, radius, tolerance)`
 - `get_point_cloud_stats(point_cloud_handle)`
 - `simulate_polishing_step(tool_handle, surface_cloud_handle, contact_radius, removal_depth)`
 - `simulate_polishing_contact(surface_cloud_handle, tool_position, contact_radius, removal_depth)`
+- `execute_polishing_groove(surface_cloud_handle, start_position, end_position, contact_radius, removal_depth, steps)`
 - `execute_polishing_path(environment_handle, group_handle, target_handle, tool_handle, surface_cloud_handle, waypoints, contact_radius, removal_depth, relative_to, steps_per_waypoint, dwell_seconds)`
 
 ## IK 与 Python Wrapper 排查

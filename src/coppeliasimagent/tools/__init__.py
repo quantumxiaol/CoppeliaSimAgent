@@ -32,6 +32,7 @@ from .models import load_model, load_robot_model, set_parent_child
 from .point_cloud import (
     create_point_cloud_pottery_cylinder,
     create_point_cloud_surface_from_shape,
+    execute_polishing_groove,
     execute_polishing_path,
     get_point_cloud_stats,
     insert_points_into_point_cloud,
@@ -89,6 +90,7 @@ __all__ = [
     "duplicate_object",
     "execute_cartesian_waypoints",
     "execute_joint_trajectory",
+    "execute_polishing_groove",
     "execute_polishing_path",
     "find_objects",
     "find_robot_joints",

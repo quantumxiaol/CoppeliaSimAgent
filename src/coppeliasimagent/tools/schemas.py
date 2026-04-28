@@ -1015,6 +1015,11 @@ class CreatePointCloudPotteryCylinderInput(ToolInputModel):
     color: list[float] = Field(default_factory=lambda: [0.9, 0.65, 0.35], min_length=3, max_length=3)
     alias: str = Field(default="point_cloud_pottery_cylinder", min_length=1)
     keep_source_shape: bool = False
+    layers: int = Field(default=1, ge=1, le=30)
+    wall_thickness: float = Field(default=0.0, ge=0.0)
+    angular_step_deg: float | None = Field(default=None, gt=0.0, le=45.0)
+    include_caps: bool = True
+    use_explicit_points: bool = False
 
     @field_validator("center")
     @classmethod
@@ -1034,6 +1039,12 @@ class CreatePointCloudPotteryCylinderInput(ToolInputModel):
             raise ValueError("alias cannot be blank")
         return text
 
+    @model_validator(mode="after")
+    def validate_layer_mode(self) -> "CreatePointCloudPotteryCylinderInput":
+        if self.layers > 1 and self.wall_thickness <= 0.0:
+            raise ValueError("wall_thickness must be > 0 when layers > 1")
+        return self
+
 
 class SimulatePolishingContactInput(ToolInputModel):
     surface_cloud_handle: int
@@ -1045,6 +1056,20 @@ class SimulatePolishingContactInput(ToolInputModel):
     @classmethod
     def validate_tool_position(cls, value: list[float]) -> list[float]:
         return _validate_vec3(value, field_name="tool_position")
+
+
+class ExecutePolishingGrooveInput(ToolInputModel):
+    surface_cloud_handle: int
+    start_position: list[float] = Field(min_length=3, max_length=3)
+    end_position: list[float] = Field(min_length=3, max_length=3)
+    contact_radius: float = Field(gt=0.0)
+    removal_depth: float = Field(default=0.0, ge=0.0)
+    steps: int = Field(default=12, ge=2, le=500)
+
+    @field_validator("start_position", "end_position")
+    @classmethod
+    def validate_position(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="position")
 
 
 class SimulatePolishingStepInput(ToolInputModel):
