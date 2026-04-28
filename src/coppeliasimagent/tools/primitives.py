@@ -39,6 +39,35 @@ def _resolve_primitive_constant(sim: object, primitive: PrimitiveType) -> int:
     return getattr(sim, attr)
 
 
+def _collidable_special_property(sim: object) -> int | None:
+    bits = [
+        "objectspecialproperty_collidable",
+        "objectspecialproperty_measurable",
+        "objectspecialproperty_detectable_all",
+        "objectspecialproperty_renderable",
+    ]
+    value = 0
+    for attr in bits:
+        bit = getattr(sim, attr, None)
+        if bit is None:
+            return None
+        value |= int(bit)
+    return value
+
+
+def _apply_shape_physics_flags(sim: object, handle: int, *, dynamic: bool) -> None:
+    special_property = _collidable_special_property(sim)
+    if special_property is not None and hasattr(sim, "setObjectSpecialProperty"):
+        sim.setObjectSpecialProperty(handle, special_property)
+
+    if hasattr(sim, "shapeintparam_static"):
+        sim.setObjectInt32Param(handle, sim.shapeintparam_static, 0 if dynamic else 1)
+    if hasattr(sim, "shapeintparam_respondable"):
+        sim.setObjectInt32Param(handle, sim.shapeintparam_respondable, 1)
+    if hasattr(sim, "shapeintparam_respondable_mask"):
+        sim.setObjectInt32Param(handle, sim.shapeintparam_respondable_mask, 0xFFFF)
+
+
 def spawn_primitive(
     primitive: str,
     size: list[float],
@@ -76,14 +105,17 @@ def spawn_primitive(
 
     sim = get_sim()
     primitive_const = _resolve_primitive_constant(sim, payload.primitive)
+    if payload.primitive is PrimitiveType.CYLINDER and hasattr(sim, "primitiveshape_cuboid"):
+        # Some CoppeliaSim Remote API builds create visual cylinder primitives
+        # that report collidable special properties but do not participate in
+        # checkCollision/dynamics contacts. Use a same-bounds cuboid as the
+        # physical proxy so cylinder-sized objects remain pushable.
+        primitive_const = getattr(sim, "primitiveshape_cuboid")
 
     handle = sim.createPrimitiveShape(primitive_const, payload.size)
     sim.setObjectPosition(handle, payload.relative_to, payload.position)
     sim.setShapeColor(handle, None, sim.colorcomponent_ambient_diffuse, payload.color)
-
-    if payload.dynamic:
-        sim.setObjectInt32Param(handle, sim.shapeintparam_static, 0)
-        sim.setObjectInt32Param(handle, sim.shapeintparam_respondable, 1)
+    _apply_shape_physics_flags(sim, handle, dynamic=payload.dynamic)
 
     return int(handle)
 

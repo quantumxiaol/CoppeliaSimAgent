@@ -9,7 +9,8 @@ from pydantic import ValidationError
 from ..core.connection import get_sim
 from ..core.exceptions import ToolValidationError
 from .kinematics import move_ik_target, set_joint_position, set_joint_target_position
-from .schemas import ExecuteCartesianWaypointsInput, ExecuteJointTrajectoryInput
+from .runtime import step_simulation
+from .schemas import ExecuteCartesianWaypointsInput, ExecuteJointTrajectoryInput, ExecuteSteppedIKPathInput
 
 
 def _validation_error(exc: ValidationError) -> ToolValidationError:
@@ -104,4 +105,81 @@ def execute_cartesian_waypoints(
         "target_handle": payload.target_handle,
         "waypoint_count": len(payload.waypoints),
         "final_position": [float(v) for v in sim.getObjectPosition(payload.target_handle, payload.relative_to)],
+    }
+
+
+def execute_stepped_ik_path(
+    environment_handle: int,
+    group_handle: int,
+    target_handle: int,
+    waypoints: list[list[float]],
+    relative_to: int = -1,
+    ik_steps_per_waypoint: int = 1,
+    simulation_steps_per_waypoint: int = 1,
+    start_simulation: bool = True,
+    keep_stepping_enabled: bool = True,
+    record_handles: list[int] | None = None,
+    record_every: int = 1,
+) -> dict[str, object]:
+    """Move an IK target and advance simulation in one Remote API session."""
+    try:
+        payload = ExecuteSteppedIKPathInput.model_validate(
+            {
+                "environment_handle": environment_handle,
+                "group_handle": group_handle,
+                "target_handle": target_handle,
+                "waypoints": waypoints,
+                "relative_to": relative_to,
+                "ik_steps_per_waypoint": ik_steps_per_waypoint,
+                "simulation_steps_per_waypoint": simulation_steps_per_waypoint,
+                "start_simulation": start_simulation,
+                "keep_stepping_enabled": keep_stepping_enabled,
+                "record_handles": record_handles or [],
+                "record_every": record_every,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    records: list[dict[str, object]] = []
+    last_step_result: dict[str, object] | None = None
+    for index, waypoint in enumerate(payload.waypoints, start=1):
+        move_ik_target(
+            environment_handle=payload.environment_handle,
+            group_handle=payload.group_handle,
+            target_handle=payload.target_handle,
+            position=waypoint,
+            relative_to=payload.relative_to,
+            steps=payload.ik_steps_per_waypoint,
+        )
+        last_step_result = step_simulation(
+            steps=payload.simulation_steps_per_waypoint,
+            start_if_stopped=payload.start_simulation,
+            keep_stepping_enabled=payload.keep_stepping_enabled,
+        )
+        if index == 1 or index == len(payload.waypoints) or index % payload.record_every == 0:
+            sim = get_sim()
+            records.append(
+                {
+                    "index": index,
+                    "waypoint": waypoint,
+                    "target_position": [
+                        float(v) for v in sim.getObjectPosition(payload.target_handle, payload.relative_to)
+                    ],
+                    "objects": {
+                        str(handle): [float(v) for v in sim.getObjectPosition(handle, payload.relative_to)]
+                        for handle in payload.record_handles
+                    },
+                }
+            )
+
+    sim = get_sim()
+    return {
+        "environment_handle": payload.environment_handle,
+        "group_handle": payload.group_handle,
+        "target_handle": payload.target_handle,
+        "waypoint_count": len(payload.waypoints),
+        "final_position": [float(v) for v in sim.getObjectPosition(payload.target_handle, payload.relative_to)],
+        "records": records,
+        "last_step_result": last_step_result,
     }

@@ -2,11 +2,13 @@
 
 目标：
 1. 检查 CoppeliaSim 连接、仿真状态和 simIK 插件状态。
-2. 在新场景中加载桌子：
-   - model_path="data_ttm/diningTable.ttm"
-   - 桌子放在地面上，建议 position=[0.65,0.0,0.0]
-   - 如果模型原点导致 bbox 低于地面，请调整 z，使桌子底部不低于 z=0。
-   - 读取 table handle、pose，并确认 table_top_z。
+2. 在新场景中创建蓝色方块桌面，替代桌子模型：
+   - 使用 spawn_primitive 创建 primitive="cuboid"。
+   - 建议桌面尺寸 size=[1.10,0.70,0.08]，颜色 color=[0.1,0.25,0.9]。
+   - 建议桌面中心 position=[0.65,0.0,0.74]，此时 table_top_z=0.78。
+   - 桌面必须是静态可碰撞支撑面：使用 set_shape_dynamics 设置 static=true、respondable=true。
+   - 可按 ABB 可达性在合理范围内调整桌面 x/y/z 和尺寸，但桌面底部必须不低于 z=0。
+   - 读取 table handle、pose、size，并确认 table_top_z。
 3. 加载 ABB IRB4600：
    - model_path="robot_ttm/ABB IRB 4600-40-255.ttm"
    - base z 必须为 0，禁止把机械臂放到地面以下。
@@ -40,7 +42,7 @@
      - 但禁止把 ABB base z 调到负数
 7. 汇报结果：
    - simIK 是否可用
-   - table handle、table_top_z
+   - table handle、table pose、table size、table_top_z
    - ABB robot handle、joint handles、IkTip handle、IkTarget handle
    - ABB final base pose
    - 圆柱 handle、初始/最终 pose、位移距离

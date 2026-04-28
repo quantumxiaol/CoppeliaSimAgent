@@ -67,7 +67,7 @@ from ..tools.simulation import (
     start_simulation,
     stop_simulation,
 )
-from ..tools.trajectory import execute_cartesian_waypoints, execute_joint_trajectory
+from ..tools.trajectory import execute_cartesian_waypoints, execute_joint_trajectory, execute_stepped_ik_path
 from ..tools.verification import (
     verify_force_threshold,
     verify_joint_positions_reached,
@@ -88,6 +88,7 @@ from ..tools.schemas import (
     DuplicateObjectInput,
     ExecuteCartesianWaypointsInput,
     ExecuteJointTrajectoryInput,
+    ExecuteSteppedIKPathInput,
     ExecutePolishingGrooveInput,
     ExecutePolishingPathInput,
     FindRobotJointsInput,
@@ -500,6 +501,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Move an IK target through Cartesian waypoints and solve each segment.",
         input_model=ExecuteCartesianWaypointsInput,
         handler=execute_cartesian_waypoints,
+    ),
+    "execute_stepped_ik_path": ToolDefinition(
+        name="execute_stepped_ik_path",
+        description="Move an IK target through waypoints and step simulation in one Remote API session.",
+        input_model=ExecuteSteppedIKPathInput,
+        handler=execute_stepped_ik_path,
     ),
     "verify_joint_positions_reached": ToolDefinition(
         name="verify_joint_positions_reached",

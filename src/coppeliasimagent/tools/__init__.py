@@ -67,7 +67,7 @@ from .simulation import (
     start_simulation,
     stop_simulation,
 )
-from .trajectory import execute_cartesian_waypoints, execute_joint_trajectory
+from .trajectory import execute_cartesian_waypoints, execute_joint_trajectory, execute_stepped_ik_path
 from .verification import (
     verify_force_threshold,
     verify_joint_positions_reached,
@@ -90,6 +90,7 @@ __all__ = [
     "duplicate_object",
     "execute_cartesian_waypoints",
     "execute_joint_trajectory",
+    "execute_stepped_ik_path",
     "execute_polishing_groove",
     "execute_polishing_path",
     "find_objects",

@@ -838,6 +838,25 @@ class ExecuteCartesianWaypointsInput(ToolInputModel):
         return [_validate_vec3(item, field_name="waypoint") for item in value]
 
 
+class ExecuteSteppedIKPathInput(ToolInputModel):
+    environment_handle: int
+    group_handle: int
+    target_handle: int
+    waypoints: list[list[float]] = Field(min_length=1, max_length=1000)
+    relative_to: int = -1
+    ik_steps_per_waypoint: int = Field(default=1, ge=1, le=200)
+    simulation_steps_per_waypoint: int = Field(default=1, ge=1, le=1000)
+    start_simulation: bool = True
+    keep_stepping_enabled: bool = True
+    record_handles: list[int] = Field(default_factory=list, max_length=32)
+    record_every: int = Field(default=1, ge=1, le=1000)
+
+    @field_validator("waypoints")
+    @classmethod
+    def validate_waypoints(cls, value: list[list[float]]) -> list[list[float]]:
+        return [_validate_vec3(item, field_name="waypoint") for item in value]
+
+
 class VerifyJointPositionsReachedInput(ToolInputModel):
     joint_handles: list[int] = Field(min_length=1, max_length=32)
     target_positions: list[float] = Field(min_length=1, max_length=32)

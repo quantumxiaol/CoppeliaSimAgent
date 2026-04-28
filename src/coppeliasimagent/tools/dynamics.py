@@ -105,9 +105,14 @@ def set_shape_dynamics(
     if payload.friction is not None:
         param = getattr(sim, "shapefloatparam_friction", None)
         if param is None or not hasattr(sim, "setObjectFloatParam"):
-            raise RuntimeError("Current CoppeliaSim API does not expose shape friction parameter")
-        sim.setObjectFloatParam(payload.handle, param, payload.friction)
-        applied["friction"] = payload.friction
+            applied["friction"] = {
+                "requested": payload.friction,
+                "applied": False,
+                "reason": "Current CoppeliaSim API does not expose shape friction parameter",
+            }
+        else:
+            sim.setObjectFloatParam(payload.handle, param, payload.friction)
+            applied["friction"] = payload.friction
 
     if applied:
         _reset_handle(sim, payload.handle, include_model=False)
