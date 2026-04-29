@@ -1058,8 +1058,8 @@ class TestTools(unittest.TestCase):
         self.assertEqual(pc["point_count"], 10)
         self.assertEqual(hidden_pc["source_shape_action"], "hidden")
         self.assertEqual(sim.object_int_params[(5, sim.objintparam_visibility_layer)], 0)
-        self.assertEqual(pottery["source_shape_action"], "removed")
-        self.assertNotIn(pottery["source_shape_handle"], sim.object_names)
+        self.assertEqual(pottery["source_shape_action"], "not_created")
+        self.assertIsNone(pottery["source_shape_handle"])
         self.assertEqual(dense_pottery["source_shape_action"], "not_created")
         self.assertEqual(dense_pottery["layers"], 3)
         self.assertGreater(dense_pottery["generated_points"], 0)
@@ -1110,6 +1110,79 @@ class TestTools(unittest.TestCase):
         self.assertTrue(ik["target_detached_to_world"])
         self.assertEqual(ik_again["resolved_target_path"], "/IkTarget")
         self.assertIsNotNone(ik["verification"])
+
+    def test_checked_ik_reports_tip_target_residual(self) -> None:
+        sim = FakeSim()
+        simik = FakeSimIK()
+        with patch("coppeliasimagent.tools.kinematics.get_sim", return_value=sim), patch(
+            "coppeliasimagent.tools.kinematics.get_simik", return_value=simik
+        ):
+            target = kinematics.spawn_waypoint([0.0, 0.0, 0.2])
+            ik_info = kinematics.setup_ik_link(base_handle=1, tip_handle=2, target_handle=target)
+            out = kinematics.move_ik_target_checked(
+                environment_handle=ik_info["environment_handle"],
+                group_handle=ik_info["group_handle"],
+                target_handle=target,
+                tip_handle=2,
+                position=[0.5, 0.0, 0.2],
+                steps=2,
+                max_position_error=0.01,
+                record_joint_handles=[31, 32],
+            )
+
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["failure_reason"], "TARGET_MOVED_BUT_TIP_NOT_MOVED")
+        self.assertGreater(out["position_error"], 0.01)
+        self.assertEqual(len(out["ik_return_codes"]), 2)
+
+    def test_visual_and_proxy_primitives_split_cylinder_geometry(self) -> None:
+        sim = FakeSim()
+        with patch("coppeliasimagent.tools.primitives.get_sim", return_value=sim):
+            legacy = primitives.spawn_primitive(
+                primitive="cylinder",
+                size=[0.1, 0.1, 0.2],
+                position=[0.0, 0.0, 0.1],
+            )
+            visual = primitives.spawn_visual_cylinder(
+                radius=0.05,
+                height=0.2,
+                position=[0.2, 0.0, 0.1],
+                alias="visual_can",
+            )
+            proxy = primitives.spawn_physics_proxy(
+                proxy_type="cylinder_proxy",
+                size=[0.1, 0.1, 0.2],
+                position=[0.2, 0.0, 0.1],
+                alias="can_proxy",
+            )
+
+        create_calls = [call for call in sim.calls if call[0] == "createPrimitiveShape"]
+        self.assertEqual(create_calls[0][1][0], sim.primitiveshape_cuboid)
+        self.assertEqual(create_calls[1][1][0], sim.primitiveshape_cylinder)
+        self.assertEqual(create_calls[2][1][0], sim.primitiveshape_cuboid)
+        self.assertEqual(sim.object_names[visual["handle"]], "visual_can")
+        self.assertEqual(sim.object_names[proxy["handle"]], "can_proxy")
+        self.assertIsInstance(legacy, int)
+
+    def test_create_pusher_tool_for_abb(self) -> None:
+        sim = FakeSim()
+        sim.object_types[38] = sim.object_dummy_type
+        sim.object_names[38] = "IkTip"
+        sim.object_positions[38] = [0.8, 0.0, 0.8]
+        sim.object_orientations[38] = [0.0, 0.0, 0.0]
+        sim.object_parents[38] = 36
+
+        with patch("coppeliasimagent.tools.task_skills.get_sim", return_value=sim), patch(
+            "coppeliasimagent.tools.primitives.get_sim", return_value=sim
+        ), patch("coppeliasimagent.tools.dynamics.get_sim", return_value=sim):
+            from coppeliasimagent.tools.task_skills import create_pusher_tool_for_abb
+
+            out = create_pusher_tool_for_abb(robot_path="/IRB4600", radius=0.015)
+
+        self.assertEqual(out["alias"], "pusher_tip")
+        self.assertEqual(out["parent_handle"], 38)
+        self.assertEqual(sim.object_parents[out["handle"]], 38)
+        self.assertEqual(sim.object_int_params[(out["handle"], sim.shapeintparam_respondable)], 1)
 
 
 if __name__ == "__main__":

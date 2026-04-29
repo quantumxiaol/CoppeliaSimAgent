@@ -245,7 +245,7 @@ def create_point_cloud_pottery_cylinder(
     wall_thickness: float = 0.0,
     angular_step_deg: float | None = None,
     include_caps: bool = True,
-    use_explicit_points: bool = False,
+    use_explicit_points: bool = True,
 ) -> dict[str, object]:
     """Create a point-cloud cylinder and hide/remove its source mesh by default."""
     try:

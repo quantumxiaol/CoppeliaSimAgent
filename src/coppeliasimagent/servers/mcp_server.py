@@ -21,6 +21,7 @@ from ..tools.kinematics import (
     get_joint_position,
     get_joint_target_force,
     move_ik_target,
+    move_ik_target_checked,
     set_joint_dyn_ctrl_mode,
     set_joint_mode,
     set_joint_position,
@@ -55,7 +56,11 @@ from ..tools.primitives import (
     set_object_pose,
     set_object_visibility,
     spawn_cuboid,
+    spawn_composite_object,
+    spawn_physics_proxy,
     spawn_primitive,
+    spawn_visual_cylinder,
+    spawn_visual_primitive,
 )
 from ..tools.runtime import step_simulation, wait_seconds, wait_until_object_pose_stable, wait_until_state
 from ..tools.scene import check_collision, find_objects, get_object_pose, get_relative_pose, get_scene_graph
@@ -67,7 +72,8 @@ from ..tools.simulation import (
     start_simulation,
     stop_simulation,
 )
-from ..tools.trajectory import execute_cartesian_waypoints, execute_joint_trajectory
+from ..tools.task_skills import create_pusher_tool_for_abb, push_object_with_abb
+from ..tools.trajectory import execute_cartesian_waypoints, execute_joint_trajectory, execute_stepped_ik_path_checked
 from ..tools.verification import (
     verify_force_threshold,
     verify_joint_positions_reached,
@@ -184,6 +190,104 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             relative_to=relative_to,
         )
         return {"handle": handle}
+
+    @mcp.tool(name="spawn_visual_primitive", description="Spawn a visual-only primitive.")
+    def spawn_visual_primitive_tool(
+        primitive: str,
+        size: list[float],
+        position: list[float],
+        color: list[float] | None = None,
+        relative_to: int = -1,
+        alias: str | None = None,
+        visible: bool = True,
+    ) -> dict[str, Any]:
+        return spawn_visual_primitive(
+            primitive=primitive,
+            size=size,
+            position=position,
+            color=color,
+            relative_to=relative_to,
+            alias=alias,
+            visible=visible,
+        )
+
+    @mcp.tool(name="spawn_visual_cylinder", description="Spawn a true visual cylinder without physics substitution.")
+    def spawn_visual_cylinder_tool(
+        radius: float,
+        height: float,
+        position: list[float],
+        color: list[float] | None = None,
+        relative_to: int = -1,
+        alias: str | None = None,
+        visible: bool = True,
+    ) -> dict[str, Any]:
+        return spawn_visual_cylinder(
+            radius=radius,
+            height=height,
+            position=position,
+            color=color,
+            relative_to=relative_to,
+            alias=alias,
+            visible=visible,
+        )
+
+    @mcp.tool(name="spawn_physics_proxy", description="Spawn a respondable physics proxy shape.")
+    def spawn_physics_proxy_tool(
+        proxy_type: str,
+        size: list[float],
+        position: list[float],
+        color: list[float] | None = None,
+        dynamic: bool = True,
+        respondable: bool = True,
+        visible: bool = False,
+        relative_to: int = -1,
+        alias: str | None = None,
+        mass: float | None = None,
+        friction: float | None = None,
+    ) -> dict[str, Any]:
+        return spawn_physics_proxy(
+            proxy_type=proxy_type,
+            size=size,
+            position=position,
+            color=color,
+            dynamic=dynamic,
+            respondable=respondable,
+            visible=visible,
+            relative_to=relative_to,
+            alias=alias,
+            mass=mass,
+            friction=friction,
+        )
+
+    @mcp.tool(name="spawn_composite_object", description="Create visual geometry parented to a physics proxy.")
+    def spawn_composite_object_tool(
+        visual_primitive: str = "cylinder",
+        proxy_type: str = "cylinder_proxy",
+        size: list[float] | None = None,
+        position: list[float] | None = None,
+        visual_color: list[float] | None = None,
+        proxy_color: list[float] | None = None,
+        dynamic: bool = True,
+        visible_proxy: bool = False,
+        relative_to: int = -1,
+        alias: str = "composite_object",
+        mass: float | None = None,
+        friction: float | None = None,
+    ) -> dict[str, Any]:
+        return spawn_composite_object(
+            visual_primitive=visual_primitive,
+            proxy_type=proxy_type,
+            size=size,
+            position=position,
+            visual_color=visual_color,
+            proxy_color=proxy_color,
+            dynamic=dynamic,
+            visible_proxy=visible_proxy,
+            relative_to=relative_to,
+            alias=alias,
+            mass=mass,
+            friction=friction,
+        )
 
     @mcp.tool(name="spawn_cuboid", description="Spawn a cuboid.")
     def spawn_cuboid_tool(
@@ -465,6 +569,76 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             reset_dynamics=reset_dynamics,
         )
 
+    @mcp.tool(name="create_pusher_tool_for_abb", description="Create/reuse a visible respondable ABB pusher tool.")
+    def create_pusher_tool_for_abb_tool(
+        robot_path: str = "/IRB4600",
+        parent_path: str | None = None,
+        alias: str = "pusher_tip",
+        shape: str = "sphere",
+        size: list[float] | None = None,
+        radius: float = 0.02,
+        offset: list[float] | None = None,
+        color: list[float] | None = None,
+        static: bool = True,
+        respondable: bool = True,
+        visible: bool = True,
+        reuse_existing: bool = True,
+    ) -> dict[str, Any]:
+        return create_pusher_tool_for_abb(
+            robot_path=robot_path,
+            parent_path=parent_path,
+            alias=alias,
+            shape=shape,
+            size=size,
+            radius=radius,
+            offset=offset,
+            color=color,
+            static=static,
+            respondable=respondable,
+            visible=visible,
+            reuse_existing=reuse_existing,
+        )
+
+    @mcp.tool(name="push_object_with_abb", description="Push an object with ABB using checked IK and verification.")
+    def push_object_with_abb_tool(
+        robot_path: str = "/IRB4600",
+        object_handle: int | None = None,
+        push_direction: list[float] | None = None,
+        push_distance: float = 0.10,
+        contact_height_ratio: float = 0.5,
+        pre_contact_clearance: float = 0.04,
+        contact_margin: float = 0.005,
+        table_handle: int | None = None,
+        pusher_tool_handle: int | None = None,
+        max_tip_error: float = 0.015,
+        simulation_steps_per_waypoint: int = 5,
+        ik_steps_per_waypoint: int = 10,
+        object_mass: float = 0.1,
+        object_friction: float | None = None,
+        min_moved_distance: float = 0.01,
+        settle_steps: int = 20,
+        constraint_policy: str = "position_only",
+    ) -> dict[str, Any]:
+        return push_object_with_abb(
+            robot_path=robot_path,
+            object_handle=object_handle,
+            push_direction=push_direction,
+            push_distance=push_distance,
+            contact_height_ratio=contact_height_ratio,
+            pre_contact_clearance=pre_contact_clearance,
+            contact_margin=contact_margin,
+            table_handle=table_handle,
+            pusher_tool_handle=pusher_tool_handle,
+            max_tip_error=max_tip_error,
+            simulation_steps_per_waypoint=simulation_steps_per_waypoint,
+            ik_steps_per_waypoint=ik_steps_per_waypoint,
+            object_mass=object_mass,
+            object_friction=object_friction,
+            min_moved_distance=min_moved_distance,
+            settle_steps=settle_steps,
+            constraint_policy=constraint_policy,
+        )
+
     @mcp.tool(name="find_robot_joints", description="Find joint handles below a robot model path.")
     def find_robot_joints_tool(
         robot_path: str = "/IRB4600",
@@ -478,12 +652,14 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         tip_handle: int,
         target_handle: int,
         constraints_mask: int | None = None,
+        constraint_policy: str | None = None,
     ) -> dict[str, Any]:
         return setup_ik_link(
             base_handle=base_handle,
             tip_handle=tip_handle,
             target_handle=target_handle,
             constraints_mask=constraints_mask,
+            constraint_policy=constraint_policy,
         )
 
     @mcp.tool(name="setup_youbot_arm_ik", description="Create/reuse youBot arm tip-target dummies and bind an IK chain.")
@@ -517,6 +693,7 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         tip_path: str = "/IRB4600/IkTip",
         target_path: str = "/IRB4600/IkTarget",
         constraints_mask: int | None = None,
+        constraint_policy: str | None = None,
         verify_motion: bool = True,
         test_offset: list[float] | None = None,
         restore_target: bool = True,
@@ -528,6 +705,7 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             tip_path=tip_path,
             target_path=target_path,
             constraints_mask=constraints_mask,
+            constraint_policy=constraint_policy,
             verify_motion=verify_motion,
             test_offset=test_offset,
             restore_target=restore_target,
@@ -557,6 +735,36 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             "group_handle": group_handle,
             "target_handle": target_handle,
         }
+
+    @mcp.tool(name="move_ik_target_checked", description="Move IK target and return explicit residual diagnostics.")
+    def move_ik_target_checked_tool(
+        environment_handle: int,
+        group_handle: int,
+        target_handle: int,
+        tip_handle: int,
+        position: list[float],
+        orientation_deg: list[float] | None = None,
+        relative_to: int = -1,
+        steps: int = 10,
+        max_position_error: float = 0.01,
+        max_orientation_error_deg: float = 5.0,
+        record_joint_handles: list[int] | None = None,
+        collision_pairs: list[list[int]] | None = None,
+    ) -> dict[str, Any]:
+        return move_ik_target_checked(
+            environment_handle=environment_handle,
+            group_handle=group_handle,
+            target_handle=target_handle,
+            tip_handle=tip_handle,
+            position=position,
+            orientation_deg=orientation_deg,
+            relative_to=relative_to,
+            steps=steps,
+            max_position_error=max_position_error,
+            max_orientation_error_deg=max_orientation_error_deg,
+            record_joint_handles=record_joint_handles,
+            collision_pairs=collision_pairs,
+        )
 
     @mcp.tool(name="actuate_gripper", description="Set int signal for gripper open/close.")
     def actuate_gripper_tool(signal_name: str, closed: bool) -> dict[str, Any]:
@@ -667,6 +875,48 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             relative_to=relative_to,
             steps_per_waypoint=steps_per_waypoint,
             dwell_seconds=dwell_seconds,
+        )
+
+    @mcp.tool(name="execute_stepped_ik_path_checked", description="Execute checked IK waypoints with simulation stepping.")
+    def execute_stepped_ik_path_checked_tool(
+        environment_handle: int,
+        group_handle: int,
+        target_handle: int,
+        tip_handle: int,
+        waypoints: list[list[float]],
+        orientation_deg: list[float] | None = None,
+        relative_to: int = -1,
+        ik_steps_per_waypoint: int = 10,
+        simulation_steps_per_waypoint: int = 1,
+        start_simulation: bool = True,
+        keep_stepping_enabled: bool = True,
+        max_position_error: float = 0.01,
+        max_orientation_error_deg: float = 5.0,
+        record_joint_handles: list[int] | None = None,
+        record_handles: list[int] | None = None,
+        record_every: int = 1,
+        stop_on_failure: bool = True,
+        collision_pairs: list[list[int]] | None = None,
+    ) -> dict[str, Any]:
+        return execute_stepped_ik_path_checked(
+            environment_handle=environment_handle,
+            group_handle=group_handle,
+            target_handle=target_handle,
+            tip_handle=tip_handle,
+            waypoints=waypoints,
+            orientation_deg=orientation_deg,
+            relative_to=relative_to,
+            ik_steps_per_waypoint=ik_steps_per_waypoint,
+            simulation_steps_per_waypoint=simulation_steps_per_waypoint,
+            start_simulation=start_simulation,
+            keep_stepping_enabled=keep_stepping_enabled,
+            max_position_error=max_position_error,
+            max_orientation_error_deg=max_orientation_error_deg,
+            record_joint_handles=record_joint_handles,
+            record_handles=record_handles,
+            record_every=record_every,
+            stop_on_failure=stop_on_failure,
+            collision_pairs=collision_pairs,
         )
 
     @mcp.tool(name="get_object_velocity", description="Read object linear/angular velocity.")
@@ -857,7 +1107,7 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         wall_thickness: float = 0.0,
         angular_step_deg: float | None = None,
         include_caps: bool = True,
-        use_explicit_points: bool = False,
+        use_explicit_points: bool = True,
     ) -> dict[str, Any]:
         return create_point_cloud_pottery_cylinder(
             radius=radius,

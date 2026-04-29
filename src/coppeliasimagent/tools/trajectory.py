@@ -8,9 +8,14 @@ from pydantic import ValidationError
 
 from ..core.connection import get_sim
 from ..core.exceptions import ToolValidationError
-from .kinematics import move_ik_target, set_joint_position, set_joint_target_position
+from .kinematics import move_ik_target, move_ik_target_checked, set_joint_position, set_joint_target_position
 from .runtime import step_simulation
-from .schemas import ExecuteCartesianWaypointsInput, ExecuteJointTrajectoryInput, ExecuteSteppedIKPathInput
+from .schemas import (
+    ExecuteCartesianWaypointsInput,
+    ExecuteJointTrajectoryInput,
+    ExecuteSteppedIKPathCheckedInput,
+    ExecuteSteppedIKPathInput,
+)
 
 
 def _validation_error(exc: ValidationError) -> ToolValidationError:
@@ -181,5 +186,127 @@ def execute_stepped_ik_path(
         "waypoint_count": len(payload.waypoints),
         "final_position": [float(v) for v in sim.getObjectPosition(payload.target_handle, payload.relative_to)],
         "records": records,
+        "last_step_result": last_step_result,
+    }
+
+
+def execute_stepped_ik_path_checked(
+    environment_handle: int,
+    group_handle: int,
+    target_handle: int,
+    tip_handle: int,
+    waypoints: list[list[float]],
+    orientation_deg: list[float] | None = None,
+    relative_to: int = -1,
+    ik_steps_per_waypoint: int = 10,
+    simulation_steps_per_waypoint: int = 1,
+    start_simulation: bool = True,
+    keep_stepping_enabled: bool = True,
+    max_position_error: float = 0.01,
+    max_orientation_error_deg: float = 5.0,
+    record_joint_handles: list[int] | None = None,
+    record_handles: list[int] | None = None,
+    record_every: int = 1,
+    stop_on_failure: bool = True,
+    collision_pairs: list[list[int]] | None = None,
+) -> dict[str, object]:
+    """Move through IK waypoints with residual checks and deterministic simulation stepping."""
+    try:
+        payload = ExecuteSteppedIKPathCheckedInput.model_validate(
+            {
+                "environment_handle": environment_handle,
+                "group_handle": group_handle,
+                "target_handle": target_handle,
+                "tip_handle": tip_handle,
+                "waypoints": waypoints,
+                "orientation_deg": orientation_deg,
+                "relative_to": relative_to,
+                "ik_steps_per_waypoint": ik_steps_per_waypoint,
+                "simulation_steps_per_waypoint": simulation_steps_per_waypoint,
+                "start_simulation": start_simulation,
+                "keep_stepping_enabled": keep_stepping_enabled,
+                "max_position_error": max_position_error,
+                "max_orientation_error_deg": max_orientation_error_deg,
+                "record_joint_handles": record_joint_handles or [],
+                "record_handles": record_handles or [],
+                "record_every": record_every,
+                "stop_on_failure": stop_on_failure,
+                "collision_pairs": collision_pairs or [],
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    records: list[dict[str, object]] = []
+    ik_results: list[dict[str, object]] = []
+    last_step_result: dict[str, object] | None = None
+    failed_index: int | None = None
+    failed_reason: str | None = None
+
+    sim = get_sim()
+    for index, waypoint in enumerate(payload.waypoints, start=1):
+        ik_result = move_ik_target_checked(
+            environment_handle=payload.environment_handle,
+            group_handle=payload.group_handle,
+            target_handle=payload.target_handle,
+            tip_handle=payload.tip_handle,
+            position=waypoint,
+            orientation_deg=payload.orientation_deg,
+            relative_to=payload.relative_to,
+            steps=payload.ik_steps_per_waypoint,
+            max_position_error=payload.max_position_error,
+            max_orientation_error_deg=payload.max_orientation_error_deg,
+            record_joint_handles=payload.record_joint_handles,
+            collision_pairs=payload.collision_pairs,
+        )
+        ik_result["index"] = index
+        ik_results.append(ik_result)
+        if not bool(ik_result["ok"]) and failed_index is None:
+            failed_index = index
+            failed_reason = str(ik_result.get("failure_reason"))
+            if payload.stop_on_failure:
+                break
+
+        last_step_result = step_simulation(
+            steps=payload.simulation_steps_per_waypoint,
+            start_if_stopped=payload.start_simulation,
+            keep_stepping_enabled=payload.keep_stepping_enabled,
+        )
+        if index == 1 or index == len(payload.waypoints) or index % payload.record_every == 0:
+            records.append(
+                {
+                    "index": index,
+                    "waypoint": waypoint,
+                    "target_position": [
+                        float(v) for v in sim.getObjectPosition(payload.target_handle, payload.relative_to)
+                    ],
+                    "tip_position": [
+                        float(v) for v in sim.getObjectPosition(payload.tip_handle, payload.relative_to)
+                    ],
+                    "objects": {
+                        str(handle): [float(v) for v in sim.getObjectPosition(handle, payload.relative_to)]
+                        for handle in payload.record_handles
+                    },
+                    "ik_ok": bool(ik_result["ok"]),
+                    "position_error": ik_result["position_error"],
+                    "failure_reason": ik_result["failure_reason"],
+                }
+            )
+
+    ok = failed_index is None
+    return {
+        "ok": ok,
+        "environment_handle": payload.environment_handle,
+        "group_handle": payload.group_handle,
+        "target_handle": payload.target_handle,
+        "tip_handle": payload.tip_handle,
+        "waypoint_count": len(payload.waypoints),
+        "executed_waypoint_count": len(ik_results),
+        "failed_index": failed_index,
+        "failure_reason": failed_reason,
+        "final_target_position": [float(v) for v in sim.getObjectPosition(payload.target_handle, payload.relative_to)],
+        "final_tip_position": [float(v) for v in sim.getObjectPosition(payload.tip_handle, payload.relative_to)],
+        "records": records,
+        "ik_results": ik_results,
         "last_step_result": last_step_result,
     }

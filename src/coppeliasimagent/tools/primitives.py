@@ -11,14 +11,19 @@ from ..core.exceptions import ToolValidationError
 from .schemas import (
     ColorComponent,
     DuplicateObjectInput,
+    PhysicsProxyType,
     PrimitiveType,
     RenameObjectInput,
     RemoveObjectInput,
     SetObjectVisibilityInput,
     SetObjectColorInput,
     SetObjectPoseInput,
+    SpawnCompositeObjectInput,
     SpawnCuboidInput,
+    SpawnPhysicsProxyInput,
     SpawnPrimitiveInput,
+    SpawnVisualCylinderInput,
+    SpawnVisualPrimitiveInput,
 )
 
 _PRIMITIVE_CONST_MAP = {
@@ -66,6 +71,93 @@ def _apply_shape_physics_flags(sim: object, handle: int, *, dynamic: bool) -> No
         sim.setObjectInt32Param(handle, sim.shapeintparam_respondable, 1)
     if hasattr(sim, "shapeintparam_respondable_mask"):
         sim.setObjectInt32Param(handle, sim.shapeintparam_respondable_mask, 0xFFFF)
+
+
+def _set_object_alias(sim: object, handle: int, alias: str | None) -> None:
+    if alias is None:
+        return
+    if hasattr(sim, "setObjectAlias"):
+        sim.setObjectAlias(handle, alias)
+        return
+    if hasattr(sim, "setObjectName"):
+        sim.setObjectName(handle, alias)
+        return
+    raise RuntimeError("Current CoppeliaSim API does not expose setObjectAlias/setObjectName")
+
+
+def _apply_visual_shape_flags(sim: object, handle: int, *, visible: bool) -> None:
+    special_property = 0
+    renderable = getattr(sim, "objectspecialproperty_renderable", None)
+    detectable = getattr(sim, "objectspecialproperty_detectable_all", None)
+    if renderable is not None:
+        special_property |= int(renderable)
+    if detectable is not None:
+        special_property |= int(detectable)
+    if special_property and hasattr(sim, "setObjectSpecialProperty"):
+        sim.setObjectSpecialProperty(handle, special_property)
+
+    if hasattr(sim, "shapeintparam_static"):
+        sim.setObjectInt32Param(handle, sim.shapeintparam_static, 1)
+    if hasattr(sim, "shapeintparam_respondable"):
+        sim.setObjectInt32Param(handle, sim.shapeintparam_respondable, 0)
+    if hasattr(sim, "objintparam_visibility_layer"):
+        sim.setObjectInt32Param(handle, sim.objintparam_visibility_layer, 1 if visible else 0)
+
+
+def _apply_proxy_shape_flags(
+    sim: object,
+    handle: int,
+    *,
+    dynamic: bool,
+    respondable: bool,
+    visible: bool,
+    mass: float | None,
+    friction: float | None,
+) -> dict[str, object]:
+    special_property = _collidable_special_property(sim)
+    if special_property is not None and hasattr(sim, "setObjectSpecialProperty"):
+        sim.setObjectSpecialProperty(handle, special_property)
+    if hasattr(sim, "shapeintparam_static"):
+        sim.setObjectInt32Param(handle, sim.shapeintparam_static, 0 if dynamic else 1)
+    if hasattr(sim, "shapeintparam_respondable"):
+        sim.setObjectInt32Param(handle, sim.shapeintparam_respondable, 1 if respondable else 0)
+    if hasattr(sim, "shapeintparam_respondable_mask"):
+        sim.setObjectInt32Param(handle, sim.shapeintparam_respondable_mask, 0xFFFF if respondable else 0)
+    if hasattr(sim, "objintparam_visibility_layer"):
+        sim.setObjectInt32Param(handle, sim.objintparam_visibility_layer, 1 if visible else 0)
+
+    applied: dict[str, object] = {
+        "dynamic": dynamic,
+        "respondable": respondable,
+        "visible": visible,
+    }
+    if mass is not None:
+        if not hasattr(sim, "setShapeMass"):
+            raise RuntimeError("Current CoppeliaSim API does not expose setShapeMass")
+        sim.setShapeMass(handle, mass)
+        applied["mass"] = mass
+    if friction is not None:
+        param = getattr(sim, "shapefloatparam_friction", None)
+        if param is not None and hasattr(sim, "setObjectFloatParam"):
+            sim.setObjectFloatParam(handle, param, friction)
+            applied["friction"] = friction
+        else:
+            applied["friction"] = {
+                "requested": friction,
+                "applied": False,
+                "reason": "Current CoppeliaSim API does not expose shape friction parameter",
+            }
+    if hasattr(sim, "resetDynamicObject"):
+        sim.resetDynamicObject(handle)
+    return applied
+
+
+def _proxy_primitive(proxy_type: PhysicsProxyType) -> PrimitiveType:
+    if proxy_type in (PhysicsProxyType.CUBOID, PhysicsProxyType.CUBOID_PROXY, PhysicsProxyType.CYLINDER_PROXY):
+        return PrimitiveType.CUBOID
+    if proxy_type is PhysicsProxyType.SPHERE:
+        return PrimitiveType.SPHERE
+    raise RuntimeError(f"Unsupported physics proxy type: {proxy_type.value}")
 
 
 def spawn_primitive(
@@ -118,6 +210,220 @@ def spawn_primitive(
     _apply_shape_physics_flags(sim, handle, dynamic=payload.dynamic)
 
     return int(handle)
+
+
+def spawn_visual_primitive(
+    primitive: str,
+    size: list[float],
+    position: list[float],
+    color: list[float] | None = None,
+    relative_to: int = -1,
+    alias: str | None = None,
+    visible: bool = True,
+) -> dict[str, object]:
+    """Spawn a non-respondable visual primitive without cylinder physics substitution."""
+    try:
+        payload = SpawnVisualPrimitiveInput.model_validate(
+            {
+                "primitive": primitive,
+                "size": size,
+                "position": position,
+                "color": color if color is not None else [0.8, 0.8, 0.8],
+                "relative_to": relative_to,
+                "alias": alias,
+                "visible": visible,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    primitive_const = _resolve_primitive_constant(sim, payload.primitive)
+    handle = int(sim.createPrimitiveShape(primitive_const, payload.size))
+    sim.setObjectPosition(handle, payload.relative_to, payload.position)
+    sim.setShapeColor(handle, None, sim.colorcomponent_ambient_diffuse, payload.color)
+    _set_object_alias(sim, handle, payload.alias)
+    _apply_visual_shape_flags(sim, handle, visible=payload.visible)
+    return {
+        "handle": handle,
+        "primitive": payload.primitive.value,
+        "size": payload.size,
+        "position": payload.position,
+        "visual_only": True,
+        "respondable": False,
+        "visible": payload.visible,
+        "alias": payload.alias,
+    }
+
+
+def spawn_visual_cylinder(
+    radius: float,
+    height: float,
+    position: list[float],
+    color: list[float] | None = None,
+    relative_to: int = -1,
+    alias: str | None = None,
+    visible: bool = True,
+) -> dict[str, object]:
+    """Spawn a true visual cylinder shape without using the cuboid physics workaround."""
+    try:
+        payload = SpawnVisualCylinderInput.model_validate(
+            {
+                "radius": radius,
+                "height": height,
+                "position": position,
+                "color": color if color is not None else [0.8, 0.8, 0.8],
+                "relative_to": relative_to,
+                "alias": alias,
+                "visible": visible,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    return spawn_visual_primitive(
+        primitive=PrimitiveType.CYLINDER.value,
+        size=[payload.radius * 2.0, payload.radius * 2.0, payload.height],
+        position=payload.position,
+        color=payload.color,
+        relative_to=payload.relative_to,
+        alias=payload.alias,
+        visible=payload.visible,
+    )
+
+
+def spawn_physics_proxy(
+    proxy_type: str,
+    size: list[float],
+    position: list[float],
+    color: list[float] | None = None,
+    dynamic: bool = True,
+    respondable: bool = True,
+    visible: bool = False,
+    relative_to: int = -1,
+    alias: str | None = None,
+    mass: float | None = None,
+    friction: float | None = None,
+) -> dict[str, object]:
+    """Spawn a respondable physics proxy, e.g. a cuboid proxy for a visual cylinder."""
+    try:
+        payload = SpawnPhysicsProxyInput.model_validate(
+            {
+                "proxy_type": proxy_type,
+                "size": size,
+                "position": position,
+                "color": color if color is not None else [0.2, 0.2, 0.2],
+                "dynamic": dynamic,
+                "respondable": respondable,
+                "visible": visible,
+                "relative_to": relative_to,
+                "alias": alias,
+                "mass": mass,
+                "friction": friction,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    primitive = _proxy_primitive(payload.proxy_type)
+    handle = int(sim.createPrimitiveShape(_resolve_primitive_constant(sim, primitive), payload.size))
+    sim.setObjectPosition(handle, payload.relative_to, payload.position)
+    sim.setShapeColor(handle, None, sim.colorcomponent_ambient_diffuse, payload.color)
+    _set_object_alias(sim, handle, payload.alias)
+    applied = _apply_proxy_shape_flags(
+        sim,
+        handle,
+        dynamic=payload.dynamic,
+        respondable=payload.respondable,
+        visible=payload.visible,
+        mass=payload.mass,
+        friction=payload.friction,
+    )
+    return {
+        "handle": handle,
+        "proxy_type": payload.proxy_type.value,
+        "primitive": primitive.value,
+        "size": payload.size,
+        "position": payload.position,
+        "physics_proxy": True,
+        "applied": applied,
+        "alias": payload.alias,
+    }
+
+
+def spawn_composite_object(
+    visual_primitive: str = "cylinder",
+    proxy_type: str = "cylinder_proxy",
+    size: list[float] | None = None,
+    position: list[float] | None = None,
+    visual_color: list[float] | None = None,
+    proxy_color: list[float] | None = None,
+    dynamic: bool = True,
+    visible_proxy: bool = False,
+    relative_to: int = -1,
+    alias: str = "composite_object",
+    mass: float | None = None,
+    friction: float | None = None,
+) -> dict[str, object]:
+    """Create a visible primitive parented to a hidden respondable physics proxy."""
+    try:
+        payload = SpawnCompositeObjectInput.model_validate(
+            {
+                "visual_primitive": visual_primitive,
+                "proxy_type": proxy_type,
+                "size": size if size is not None else [0.1, 0.1, 0.1],
+                "position": position if position is not None else [0.0, 0.0, 0.05],
+                "visual_color": visual_color if visual_color is not None else [0.8, 0.8, 0.8],
+                "proxy_color": proxy_color if proxy_color is not None else [0.2, 0.2, 0.2],
+                "dynamic": dynamic,
+                "visible_proxy": visible_proxy,
+                "relative_to": relative_to,
+                "alias": alias,
+                "mass": mass,
+                "friction": friction,
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    proxy = spawn_physics_proxy(
+        proxy_type=payload.proxy_type.value,
+        size=payload.size,
+        position=payload.position,
+        color=payload.proxy_color,
+        dynamic=payload.dynamic,
+        respondable=True,
+        visible=payload.visible_proxy,
+        relative_to=payload.relative_to,
+        alias=f"{payload.alias}_proxy",
+        mass=payload.mass,
+        friction=payload.friction,
+    )
+    visual = spawn_visual_primitive(
+        primitive=payload.visual_primitive.value,
+        size=payload.size,
+        position=payload.position,
+        color=payload.visual_color,
+        relative_to=payload.relative_to,
+        alias=f"{payload.alias}_visual",
+        visible=True,
+    )
+
+    sim = get_sim()
+    sim.setObjectParent(int(visual["handle"]), int(proxy["handle"]), True)
+    return {
+        "composite_handle": int(proxy["handle"]),
+        "proxy_handle": int(proxy["handle"]),
+        "visual_handle": int(visual["handle"]),
+        "alias": payload.alias,
+        "size": payload.size,
+        "position": payload.position,
+        "dynamic": payload.dynamic,
+        "visible_proxy": payload.visible_proxy,
+        "visual": visual,
+        "proxy": proxy,
+    }
 
 
 def spawn_cuboid(

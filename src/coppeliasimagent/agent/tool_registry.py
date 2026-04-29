@@ -21,6 +21,7 @@ from ..tools.kinematics import (
     get_joint_position,
     get_joint_target_force,
     move_ik_target,
+    move_ik_target_checked,
     set_joint_dyn_ctrl_mode,
     set_joint_mode,
     set_joint_position,
@@ -55,7 +56,11 @@ from ..tools.primitives import (
     set_object_pose,
     set_object_visibility,
     spawn_cuboid,
+    spawn_composite_object,
+    spawn_physics_proxy,
     spawn_primitive,
+    spawn_visual_cylinder,
+    spawn_visual_primitive,
 )
 from ..tools.runtime import step_simulation, wait_seconds, wait_until_object_pose_stable, wait_until_state
 from ..tools.scene import check_collision, find_objects, get_object_pose, get_relative_pose, get_scene_graph
@@ -67,7 +72,9 @@ from ..tools.simulation import (
     start_simulation,
     stop_simulation,
 )
+from ..tools.task_skills import create_pusher_tool_for_abb, push_object_with_abb
 from ..tools.trajectory import execute_cartesian_waypoints, execute_joint_trajectory, execute_stepped_ik_path
+from ..tools.trajectory import execute_stepped_ik_path_checked
 from ..tools.verification import (
     verify_force_threshold,
     verify_joint_positions_reached,
@@ -81,6 +88,7 @@ from ..tools.schemas import (
     CheckCollisionInput,
     CheckCollisionMonitorInput,
     ConfigureAbbArmDriveInput,
+    CreatePusherToolForAbbInput,
     CreatePointCloudPotteryCylinderInput,
     CreatePointCloudSurfaceFromShapeInput,
     DetachObjectInput,
@@ -88,6 +96,7 @@ from ..tools.schemas import (
     DuplicateObjectInput,
     ExecuteCartesianWaypointsInput,
     ExecuteJointTrajectoryInput,
+    ExecuteSteppedIKPathCheckedInput,
     ExecuteSteppedIKPathInput,
     ExecutePolishingGrooveInput,
     ExecutePolishingPathInput,
@@ -110,7 +119,9 @@ from ..tools.schemas import (
     InsertPointsIntoPointCloudInput,
     LoadModelInput,
     MoveIKTargetInput,
+    MoveIKTargetCheckedInput,
     PauseSimulationInput,
+    PushObjectWithAbbInput,
     ReadForceSensorInput,
     ReadProximitySensorInput,
     RenameObjectInput,
@@ -141,7 +152,11 @@ from ..tools.schemas import (
     SetupIKLinkInput,
     SetupYouBotArmIKInput,
     SpawnCuboidInput,
+    SpawnCompositeObjectInput,
+    SpawnPhysicsProxyInput,
     SpawnPrimitiveInput,
+    SpawnVisualCylinderInput,
+    SpawnVisualPrimitiveInput,
     SpawnWaypointInput,
     VerifyForceThresholdInput,
     VerifyJointPositionsReachedInput,
@@ -273,6 +288,30 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Spawn a primitive shape with color/size/position.",
         input_model=SpawnPrimitiveInput,
         handler=spawn_primitive,
+    ),
+    "spawn_visual_primitive": ToolDefinition(
+        name="spawn_visual_primitive",
+        description="Spawn a visual-only primitive without cylinder physics substitution.",
+        input_model=SpawnVisualPrimitiveInput,
+        handler=spawn_visual_primitive,
+    ),
+    "spawn_visual_cylinder": ToolDefinition(
+        name="spawn_visual_cylinder",
+        description="Spawn a true visual cylinder shape without physics proxy substitution.",
+        input_model=SpawnVisualCylinderInput,
+        handler=spawn_visual_cylinder,
+    ),
+    "spawn_physics_proxy": ToolDefinition(
+        name="spawn_physics_proxy",
+        description="Spawn a respondable physics proxy such as a cuboid proxy for a cylinder.",
+        input_model=SpawnPhysicsProxyInput,
+        handler=spawn_physics_proxy,
+    ),
+    "spawn_composite_object": ToolDefinition(
+        name="spawn_composite_object",
+        description="Create a visible primitive parented to a hidden respondable physics proxy.",
+        input_model=SpawnCompositeObjectInput,
+        handler=spawn_composite_object,
     ),
     "spawn_cuboid": ToolDefinition(
         name="spawn_cuboid",
@@ -448,6 +487,18 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         input_model=ConfigureAbbArmDriveInput,
         handler=configure_abb_arm_drive,
     ),
+    "create_pusher_tool_for_abb": ToolDefinition(
+        name="create_pusher_tool_for_abb",
+        description="Create or reuse a visible respondable pusher tool attached near the ABB IK tip.",
+        input_model=CreatePusherToolForAbbInput,
+        handler=create_pusher_tool_for_abb,
+    ),
+    "push_object_with_abb": ToolDefinition(
+        name="push_object_with_abb",
+        description="Push an object with ABB using checked IK, stepping, contact monitoring and movement verification.",
+        input_model=PushObjectWithAbbInput,
+        handler=push_object_with_abb,
+    ),
     "find_robot_joints": ToolDefinition(
         name="find_robot_joints",
         description="Find joint handles below a robot model path in tree order.",
@@ -478,6 +529,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         input_model=MoveIKTargetInput,
         handler=move_ik_target,
     ),
+    "move_ik_target_checked": ToolDefinition(
+        name="move_ik_target_checked",
+        description="Move IK target and return solver codes, tip-target residuals, joint deltas and failure reason.",
+        input_model=MoveIKTargetCheckedInput,
+        handler=move_ik_target_checked,
+    ),
     "actuate_gripper": ToolDefinition(
         name="actuate_gripper",
         description="Control gripper open/close through int signal.",
@@ -507,6 +564,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Move an IK target through waypoints and step simulation in one Remote API session.",
         input_model=ExecuteSteppedIKPathInput,
         handler=execute_stepped_ik_path,
+    ),
+    "execute_stepped_ik_path_checked": ToolDefinition(
+        name="execute_stepped_ik_path_checked",
+        description="Move through IK waypoints with residual checks and deterministic simulation stepping.",
+        input_model=ExecuteSteppedIKPathCheckedInput,
+        handler=execute_stepped_ik_path_checked,
     ),
     "verify_joint_positions_reached": ToolDefinition(
         name="verify_joint_positions_reached",

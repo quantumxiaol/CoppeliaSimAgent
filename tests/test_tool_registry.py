@@ -55,6 +55,13 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("set_object_visibility", names)
         self.assertIn("find_robot_joints", names)
         self.assertIn("setup_abb_arm_ik", names)
+        self.assertIn("move_ik_target_checked", names)
+        self.assertIn("execute_stepped_ik_path_checked", names)
+        self.assertIn("spawn_visual_cylinder", names)
+        self.assertIn("spawn_physics_proxy", names)
+        self.assertIn("spawn_composite_object", names)
+        self.assertIn("create_pusher_tool_for_abb", names)
+        self.assertIn("push_object_with_abb", names)
 
     def test_unknown_tool_raises(self) -> None:
         with self.assertRaises(KeyError):
@@ -75,6 +82,7 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("start_simulation", names)
         self.assertIn("execute_polishing_path", names)
         self.assertIn("create_point_cloud_pottery_cylinder", names)
+        self.assertIn("push_object_with_abb", names)
 
 
 if __name__ == "__main__":

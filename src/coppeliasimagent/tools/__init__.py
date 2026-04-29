@@ -12,6 +12,7 @@ from .kinematics import (
     get_joint_position,
     get_joint_target_force,
     move_ik_target,
+    move_ik_target_checked,
     set_joint_dyn_ctrl_mode,
     set_joint_mode,
     set_joint_position,
@@ -48,7 +49,11 @@ from .primitives import (
     set_object_pose,
     set_object_visibility,
     spawn_cuboid,
+    spawn_composite_object,
+    spawn_physics_proxy,
     spawn_primitive,
+    spawn_visual_cylinder,
+    spawn_visual_primitive,
 )
 from .scene import (
     assert_no_collision,
@@ -67,7 +72,13 @@ from .simulation import (
     start_simulation,
     stop_simulation,
 )
-from .trajectory import execute_cartesian_waypoints, execute_joint_trajectory, execute_stepped_ik_path
+from .task_skills import create_pusher_tool_for_abb, push_object_with_abb
+from .trajectory import (
+    execute_cartesian_waypoints,
+    execute_joint_trajectory,
+    execute_stepped_ik_path,
+    execute_stepped_ik_path_checked,
+)
 from .verification import (
     verify_force_threshold,
     verify_joint_positions_reached,
@@ -83,6 +94,7 @@ __all__ = [
     "check_collision",
     "check_collision_monitor",
     "configure_abb_arm_drive",
+    "create_pusher_tool_for_abb",
     "create_point_cloud_surface_from_shape",
     "create_point_cloud_pottery_cylinder",
     "detach_object",
@@ -91,6 +103,7 @@ __all__ = [
     "execute_cartesian_waypoints",
     "execute_joint_trajectory",
     "execute_stepped_ik_path",
+    "execute_stepped_ik_path_checked",
     "execute_polishing_groove",
     "execute_polishing_path",
     "find_objects",
@@ -113,7 +126,9 @@ __all__ = [
     "load_model",
     "load_robot_model",
     "move_ik_target",
+    "move_ik_target_checked",
     "pause_simulation",
+    "push_object_with_abb",
     "read_force_sensor",
     "read_proximity_sensor",
     "rename_object",
@@ -141,7 +156,11 @@ __all__ = [
     "setup_abb_arm_ik",
     "setup_youbot_arm_ik",
     "spawn_cuboid",
+    "spawn_composite_object",
+    "spawn_physics_proxy",
     "spawn_primitive",
+    "spawn_visual_cylinder",
+    "spawn_visual_primitive",
     "spawn_waypoint",
     "step_simulation",
     "simulate_polishing_contact",

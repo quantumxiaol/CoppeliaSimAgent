@@ -21,6 +21,7 @@ dependencies = [
     "openai>=2.30.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
+    "pytest>=9.0.3",
     "python-dotenv>=1.2.2",
     "pyzmq>=27.1.0",
     "scipy>=1.17.1",

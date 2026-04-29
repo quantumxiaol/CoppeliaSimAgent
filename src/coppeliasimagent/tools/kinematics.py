@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import math
+
 from pydantic import ValidationError
 
 from ..core.connection import get_sim, get_simik
-from ..core.exceptions import ToolValidationError
+from ..core.exceptions import PluginUnavailableError, ToolValidationError
 from .schemas import (
     ActuateGripperInput,
     ActuateYouBotGripperInput,
     ConfigureAbbArmDriveInput,
+    ConstraintPolicy,
     DriveYouBotBaseInput,
     GetJointDynCtrlModeInput,
     GetJointForceInput,
@@ -17,6 +20,7 @@ from .schemas import (
     GetJointPositionInput,
     GetJointTargetForceInput,
     FindRobotJointsInput,
+    MoveIKTargetCheckedInput,
     MoveIKTargetInput,
     SetJointDynCtrlModeInput,
     SetJointModeInput,
@@ -89,6 +93,129 @@ def _default_constraint_mask(simik: object) -> int:
     ):
         mask |= int(getattr(simik, attr, 0))
     return mask
+
+
+def _constraint_mask_from_policy(simik: object, policy: ConstraintPolicy | str) -> int:
+    policy_value = policy.value if isinstance(policy, ConstraintPolicy) else str(policy)
+    position_mask = 0
+    for attr in ("constraint_x", "constraint_y", "constraint_z"):
+        position_mask |= int(getattr(simik, attr, 0))
+    if policy_value == ConstraintPolicy.POSITION_ONLY.value:
+        return position_mask
+    if policy_value == ConstraintPolicy.POSITION_YAW.value:
+        return position_mask | int(getattr(simik, "constraint_gamma", 0))
+    if policy_value == ConstraintPolicy.FULL_POSE.value:
+        return _default_constraint_mask(simik)
+    raise RuntimeError(f"Unsupported IK constraint policy: {policy_value}")
+
+
+def _distance(a: list[float], b: list[float]) -> float:
+    return math.sqrt(sum((float(a[i]) - float(b[i])) ** 2 for i in range(3)))
+
+
+def _orientation_error_deg(a_rad: list[float], b_rad: list[float]) -> float:
+    deltas = []
+    for i in range(3):
+        delta = float(a_rad[i]) - float(b_rad[i])
+        delta = (delta + math.pi) % (2.0 * math.pi) - math.pi
+        deltas.append(delta)
+    return math.degrees(math.sqrt(sum(delta * delta for delta in deltas)))
+
+
+def _joint_positions(sim: object, handles: list[int]) -> list[float]:
+    return [float(sim.getJointPosition(handle)) for handle in handles]
+
+
+def _joint_delta_norm(before: list[float], after: list[float]) -> float:
+    if not before or not after:
+        return 0.0
+    return math.sqrt(sum((after[i] - before[i]) ** 2 for i in range(len(before))))
+
+
+def _run_ik_group(simik: object, environment_handle: int, group_handle: int) -> object:
+    if hasattr(simik, "handleGroup"):
+        return simik.handleGroup(environment_handle, group_handle, {"syncWorlds": True})
+    if hasattr(simik, "syncFromSim"):
+        simik.syncFromSim(environment_handle, [group_handle])
+    result = simik.handleGroup(environment_handle, group_handle)
+    if hasattr(simik, "syncToSim"):
+        simik.syncToSim(environment_handle, [group_handle])
+    return result
+
+
+def _primary_ik_code(result: object) -> int | None:
+    if isinstance(result, bool):
+        return int(result)
+    if isinstance(result, int):
+        return result
+    if isinstance(result, float):
+        return int(result)
+    if isinstance(result, (list, tuple)) and result:
+        return _primary_ik_code(result[0])
+    return None
+
+
+def _explicit_ik_failure(simik: object, codes: list[object]) -> bool:
+    success_code = getattr(simik, "result_success", None)
+    if success_code is None:
+        return False
+    for code in codes:
+        primary = _primary_ik_code(code)
+        if primary is not None and int(primary) != int(success_code):
+            return True
+    return False
+
+
+def _collision_results(sim: object, collision_pairs: list[list[int]]) -> list[dict[str, object]]:
+    results: list[dict[str, object]] = []
+    if not collision_pairs:
+        return results
+    for entity1, entity2 in collision_pairs:
+        raw = sim.checkCollision(entity1, entity2)
+        if isinstance(raw, bool):
+            collides = raw
+        elif isinstance(raw, int):
+            collides = raw not in (0, -1)
+        elif isinstance(raw, (list, tuple)) and raw:
+            head = raw[0]
+            collides = bool(head) if isinstance(head, bool) else int(head) not in (0, -1)
+        else:
+            collides = bool(raw)
+        results.append({"entity1": int(entity1), "entity2": int(entity2), "collides": collides, "raw": raw})
+    return results
+
+
+def _ik_failure_reason(
+    *,
+    simik: object,
+    ik_return_codes: list[object],
+    position_error: float,
+    max_position_error: float,
+    orientation_error_deg: float | None,
+    max_orientation_error_deg: float,
+    target_moved_distance: float,
+    tip_moved_distance: float,
+    joint_delta_norm: float,
+    record_joint_handles: list[int],
+    collision_results: list[dict[str, object]],
+) -> str | None:
+    if any(bool(item["collides"]) for item in collision_results):
+        return "COLLISION_BLOCKED"
+    if _explicit_ik_failure(simik, ik_return_codes):
+        return "IK_TARGET_UNREACHABLE"
+    if position_error > max_position_error:
+        if target_moved_distance > max_position_error and tip_moved_distance <= 1e-5:
+            return "TARGET_MOVED_BUT_TIP_NOT_MOVED"
+        if record_joint_handles and joint_delta_norm <= 1e-6:
+            return "JOINTS_NOT_MOVING"
+        if tip_moved_distance <= 1e-5:
+            return "IK_SOLVER_NO_PROGRESS"
+        if position_error > max(0.05, max_position_error * 5.0):
+            return "IK_TARGET_UNREACHABLE"
+        return "IK_TIP_TARGET_RESIDUAL_TOO_LARGE"
+    if orientation_error_deg is not None and orientation_error_deg > max_orientation_error_deg:
+        return "IK_TIP_TARGET_RESIDUAL_TOO_LARGE"
+    return None
 
 
 def _resolve_object_handle(sim: object, object_path: str, *, no_error: bool = False) -> int:
@@ -258,6 +385,7 @@ def setup_ik_link(
     tip_handle: int,
     target_handle: int,
     constraints_mask: int | None = None,
+    constraint_policy: str | None = None,
 ) -> dict[str, int | dict[int, int]]:
     """建立 `base -> tip -> target` 的 IK 追踪链路。"""
     try:
@@ -267,6 +395,7 @@ def setup_ik_link(
                 "tip_handle": tip_handle,
                 "target_handle": target_handle,
                 "constraints_mask": constraints_mask,
+                "constraint_policy": constraint_policy,
             }
         )
     except ValidationError as exc:
@@ -279,7 +408,11 @@ def setup_ik_link(
 
     constraint_mask = payload.constraints_mask
     if constraint_mask is None:
-        constraint_mask = _default_constraint_mask(simik)
+        constraint_mask = (
+            _constraint_mask_from_policy(simik, payload.constraint_policy)
+            if payload.constraint_policy is not None
+            else _default_constraint_mask(simik)
+        )
 
     result = simik.addElementFromScene(
         env_handle,
@@ -337,14 +470,127 @@ def move_ik_target(
     sim.setObjectPosition(payload.target_handle, payload.relative_to, payload.position)
 
     for _ in range(payload.steps):
-        if hasattr(simik, "handleGroup"):
-            simik.handleGroup(payload.environment_handle, payload.group_handle, {"syncWorlds": True})
-        else:
-            if hasattr(simik, "syncFromSim"):
-                simik.syncFromSim(payload.environment_handle, [payload.group_handle])
-            simik.handleGroup(payload.environment_handle, payload.group_handle)
-            if hasattr(simik, "syncToSim"):
-                simik.syncToSim(payload.environment_handle, [payload.group_handle])
+        _run_ik_group(simik, payload.environment_handle, payload.group_handle)
+
+
+def move_ik_target_checked(
+    environment_handle: int,
+    group_handle: int,
+    target_handle: int,
+    tip_handle: int,
+    position: list[float],
+    orientation_deg: list[float] | None = None,
+    relative_to: int = -1,
+    steps: int = 10,
+    max_position_error: float = 0.01,
+    max_orientation_error_deg: float = 5.0,
+    record_joint_handles: list[int] | None = None,
+    collision_pairs: list[list[int]] | None = None,
+) -> dict[str, object]:
+    """Move an IK target and return explicit solver, residual and joint diagnostics."""
+    try:
+        payload = MoveIKTargetCheckedInput.model_validate(
+            {
+                "environment_handle": environment_handle,
+                "group_handle": group_handle,
+                "target_handle": target_handle,
+                "tip_handle": tip_handle,
+                "position": position,
+                "orientation_deg": orientation_deg,
+                "relative_to": relative_to,
+                "steps": steps,
+                "max_position_error": max_position_error,
+                "max_orientation_error_deg": max_orientation_error_deg,
+                "record_joint_handles": record_joint_handles or [],
+                "collision_pairs": collision_pairs or [],
+            }
+        )
+    except ValidationError as exc:
+        raise _validation_error(exc) from exc
+
+    sim = get_sim()
+    try:
+        simik = get_simik(required=True)
+    except PluginUnavailableError as exc:
+        return {
+            "ok": False,
+            "environment_handle": payload.environment_handle,
+            "group_handle": payload.group_handle,
+            "target_handle": payload.target_handle,
+            "tip_handle": payload.tip_handle,
+            "target_requested_position": payload.position,
+            "failure_reason": "PLUGIN_UNAVAILABLE",
+            "error": str(exc),
+        }
+
+    joint_positions_before = _joint_positions(sim, payload.record_joint_handles)
+    target_position_before = [float(v) for v in sim.getObjectPosition(payload.target_handle, -1)]
+    tip_position_before = [float(v) for v in sim.getObjectPosition(payload.tip_handle, -1)]
+
+    sim.setObjectPosition(payload.target_handle, payload.relative_to, payload.position)
+    if payload.orientation_deg is not None:
+        sim.setObjectOrientation(
+            payload.target_handle,
+            payload.relative_to,
+            [math.radians(v) for v in payload.orientation_deg],
+        )
+
+    ik_return_codes: list[object] = []
+    for _ in range(payload.steps):
+        ik_return_codes.append(_run_ik_group(simik, payload.environment_handle, payload.group_handle))
+
+    joint_positions_after = _joint_positions(sim, payload.record_joint_handles)
+    target_position = [float(v) for v in sim.getObjectPosition(payload.target_handle, -1)]
+    tip_position = [float(v) for v in sim.getObjectPosition(payload.tip_handle, -1)]
+    target_orientation = [float(v) for v in sim.getObjectOrientation(payload.target_handle, -1)]
+    tip_orientation = [float(v) for v in sim.getObjectOrientation(payload.tip_handle, -1)]
+    position_error = _distance(tip_position, target_position)
+    orientation_error = (
+        _orientation_error_deg(tip_orientation, target_orientation)
+        if payload.orientation_deg is not None
+        else None
+    )
+    joint_delta = _joint_delta_norm(joint_positions_before, joint_positions_after)
+    target_moved_distance = _distance(target_position, target_position_before)
+    tip_moved_distance = _distance(tip_position, tip_position_before)
+    collisions = _collision_results(sim, payload.collision_pairs)
+    failure_reason = _ik_failure_reason(
+        simik=simik,
+        ik_return_codes=ik_return_codes,
+        position_error=position_error,
+        max_position_error=payload.max_position_error,
+        orientation_error_deg=orientation_error,
+        max_orientation_error_deg=payload.max_orientation_error_deg,
+        target_moved_distance=target_moved_distance,
+        tip_moved_distance=tip_moved_distance,
+        joint_delta_norm=joint_delta,
+        record_joint_handles=payload.record_joint_handles,
+        collision_results=collisions,
+    )
+
+    return {
+        "ok": failure_reason is None,
+        "environment_handle": payload.environment_handle,
+        "group_handle": payload.group_handle,
+        "target_handle": payload.target_handle,
+        "tip_handle": payload.tip_handle,
+        "ik_return_codes": ik_return_codes,
+        "target_requested_position": payload.position,
+        "target_position": target_position,
+        "tip_position": tip_position,
+        "position_error": position_error,
+        "target_orientation_deg": [math.degrees(v) for v in target_orientation],
+        "tip_orientation_deg": [math.degrees(v) for v in tip_orientation],
+        "orientation_error_deg": orientation_error,
+        "joint_handles": payload.record_joint_handles,
+        "joint_positions_before": joint_positions_before,
+        "joint_positions_after": joint_positions_after,
+        "joint_delta_norm": joint_delta,
+        "target_moved_distance": target_moved_distance,
+        "tip_moved_distance": tip_moved_distance,
+        "collision_results": collisions,
+        "failure_reason": failure_reason,
+    }
 
 
 def get_joint_position(handle: int) -> float:
@@ -864,6 +1110,7 @@ def setup_abb_arm_ik(
     tip_path: str = "/IRB4600/IkTip",
     target_path: str = "/IRB4600/IkTarget",
     constraints_mask: int | None = None,
+    constraint_policy: str | None = None,
     verify_motion: bool = True,
     test_offset: list[float] | None = None,
     restore_target: bool = True,
@@ -878,6 +1125,7 @@ def setup_abb_arm_ik(
                 "tip_path": tip_path,
                 "target_path": target_path,
                 "constraints_mask": constraints_mask,
+                "constraint_policy": constraint_policy,
                 "verify_motion": verify_motion,
                 "test_offset": test_offset if test_offset is not None else [0.0, 0.0, 0.02],
                 "restore_target": restore_target,
@@ -907,6 +1155,7 @@ def setup_abb_arm_ik(
         tip_handle=tip_handle,
         target_handle=target_handle,
         constraints_mask=payload.constraints_mask,
+        constraint_policy=payload.constraint_policy.value if payload.constraint_policy is not None else None,
     )
 
     verification: dict[str, object] | None = None
@@ -948,6 +1197,7 @@ def setup_abb_arm_ik(
         "target_handle": target_handle,
         "tip_path": payload.tip_path,
         "target_path": payload.target_path,
+        "constraint_policy": payload.constraint_policy.value if payload.constraint_policy is not None else None,
         "resolved_target_path": resolved_target_path,
         "target_parent_before": target_parent_before,
         "target_parent_after": target_parent_after,

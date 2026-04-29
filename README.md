@@ -348,6 +348,10 @@ uv run test/live_task_point_cloud_polishing.py
 ### 基础几何体
 
 - `spawn_primitive(primitive, size, position, color, dynamic, relative_to)`
+- `spawn_visual_primitive(primitive, size, position, color, relative_to, alias, visible)`
+- `spawn_visual_cylinder(radius, height, position, color, relative_to, alias, visible)`
+- `spawn_physics_proxy(proxy_type, size, position, color, dynamic, respondable, visible, relative_to, alias, mass, friction)`
+- `spawn_composite_object(visual_primitive, proxy_type, size, position, visual_color, proxy_color, dynamic, visible_proxy, relative_to, alias, mass, friction)`
 - `spawn_cuboid(size, position, color, dynamic, relative_to)`
 - `set_object_pose(handle, position, orientation_deg, relative_to)`
 - `remove_object(handle)`
@@ -384,12 +388,14 @@ uv run test/live_task_point_cloud_polishing.py
 - `find_robot_joints(robot_path, include_aux_joint)`
 - `setup_ik_link(base_handle, tip_handle, target_handle, constraints_mask)`
 - `setup_youbot_arm_ik(robot_path, base_path, tip_parent_path, tip_dummy_name, target_dummy_name, tip_offset, target_offset, constraints_mask, reuse_existing)`
-- `setup_abb_arm_ik(robot_path, base_path, tip_path, target_path, constraints_mask, verify_motion, test_offset, restore_target)`
+- `setup_abb_arm_ik(robot_path, base_path, tip_path, target_path, constraints_mask, constraint_policy, verify_motion, test_offset, restore_target)`
 - `move_ik_target(environment_handle, group_handle, target_handle, position, relative_to, steps)`
+- `move_ik_target_checked(environment_handle, group_handle, target_handle, tip_handle, position, orientation_deg, relative_to, steps, max_position_error, max_orientation_error_deg, record_joint_handles, collision_pairs)`
 - `actuate_gripper(signal_name, closed)`
 - `actuate_youbot_gripper(robot_path, closed, command_mode, joint1_open, joint1_closed, joint2_open, joint2_closed, motion_params)`
 - `execute_joint_trajectory(joint_handles, waypoints, mode, dwell_seconds, motion_params)`
 - `execute_cartesian_waypoints(environment_handle, group_handle, target_handle, waypoints, relative_to, steps_per_waypoint, dwell_seconds)`
+- `execute_stepped_ik_path_checked(environment_handle, group_handle, target_handle, tip_handle, waypoints, orientation_deg, relative_to, ik_steps_per_waypoint, simulation_steps_per_waypoint, max_position_error, record_joint_handles, record_handles, collision_pairs)`
 
 ### 动作验证
 
@@ -410,6 +416,11 @@ uv run test/live_task_point_cloud_polishing.py
 - `get_object_velocity(handle)`
 - `reset_dynamic_object(handle, include_model)`
 - `set_shape_dynamics(handle, static, respondable, mass, friction)`
+
+### ABB 任务级 skills
+
+- `create_pusher_tool_for_abb(robot_path, parent_path, alias, shape, size, radius, offset, color, static, respondable, visible, reuse_existing)`
+- `push_object_with_abb(robot_path, object_handle, push_direction, push_distance, contact_height_ratio, pre_contact_clearance, contact_margin, table_handle, pusher_tool_handle, max_tip_error, simulation_steps_per_waypoint)`
 
 ### 传感器与接触监控
 
@@ -433,6 +444,7 @@ uv run test/live_task_point_cloud_polishing.py
 ## IK 与 Python Wrapper 排查
 
 - `setup_ik_link` / `move_ik_target` 已经实现；如果执行时报 `PluginUnavailableError: Plugin 'simIK' is unavailable`，优先说明当前运行中的 CoppeliaSim 实例没有暴露 `simIK`，不是项目 venv 缺 Python 包。
+- 机器人任务优先使用 `move_ik_target_checked`、`execute_stepped_ik_path_checked` 和 `push_object_with_abb`。这些工具会返回 tip-target 残差、关节变化量、接触/移动证据和结构化失败原因，例如 `IK_TARGET_UNREACHABLE`、`JOINTS_NOT_MOVING`、`NO_CONTACT`。
 - 可以先直接调用下面两个命令确认：
 
 ```bash

@@ -25,12 +25,25 @@ class PrimitiveType(str, Enum):
     CYLINDER = "cylinder"
 
 
+class PhysicsProxyType(str, Enum):
+    CUBOID = "cuboid"
+    SPHERE = "sphere"
+    CYLINDER_PROXY = "cylinder_proxy"
+    CUBOID_PROXY = "cuboid_proxy"
+
+
 class ColorComponent(str, Enum):
     AMBIENT_DIFFUSE = "ambient_diffuse"
     DIFFUSE = "diffuse"
     SPECULAR = "specular"
     EMISSION = "emission"
     TRANSPARENCY = "transparency"
+
+
+class ConstraintPolicy(str, Enum):
+    POSITION_ONLY = "position_only"
+    POSITION_YAW = "position_yaw"
+    FULL_POSE = "full_pose"
 
 
 class JointCommandMode(str, Enum):
@@ -132,6 +145,151 @@ class SpawnPrimitiveInput(ToolInputModel):
     @classmethod
     def validate_color(cls, value: list[float]) -> list[float]:
         return _validate_color(value, field_name="color")
+
+
+class SpawnVisualPrimitiveInput(ToolInputModel):
+    primitive: PrimitiveType
+    size: list[float] = Field(min_length=3, max_length=3)
+    position: list[float] = Field(min_length=3, max_length=3)
+    color: list[float] = Field(default_factory=lambda: [0.8, 0.8, 0.8], min_length=3, max_length=3)
+    relative_to: int = -1
+    alias: str | None = None
+    visible: bool = True
+
+    @field_validator("size")
+    @classmethod
+    def validate_size(cls, value: list[float]) -> list[float]:
+        normalized = _validate_vec3(value, field_name="size")
+        if any(v <= 0.0 for v in normalized):
+            raise ValueError("size values must be > 0")
+        return normalized
+
+    @field_validator("position")
+    @classmethod
+    def validate_position(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="position")
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: list[float]) -> list[float]:
+        return _validate_color(value, field_name="color")
+
+    @field_validator("alias")
+    @classmethod
+    def validate_alias(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text if text else None
+
+
+class SpawnVisualCylinderInput(ToolInputModel):
+    radius: float = Field(gt=0.0)
+    height: float = Field(gt=0.0)
+    position: list[float] = Field(min_length=3, max_length=3)
+    color: list[float] = Field(default_factory=lambda: [0.8, 0.8, 0.8], min_length=3, max_length=3)
+    relative_to: int = -1
+    alias: str | None = None
+    visible: bool = True
+
+    @field_validator("position")
+    @classmethod
+    def validate_position(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="position")
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: list[float]) -> list[float]:
+        return _validate_color(value, field_name="color")
+
+    @field_validator("alias")
+    @classmethod
+    def validate_alias(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text if text else None
+
+
+class SpawnPhysicsProxyInput(ToolInputModel):
+    proxy_type: PhysicsProxyType = PhysicsProxyType.CUBOID
+    size: list[float] = Field(min_length=3, max_length=3)
+    position: list[float] = Field(min_length=3, max_length=3)
+    color: list[float] = Field(default_factory=lambda: [0.2, 0.2, 0.2], min_length=3, max_length=3)
+    dynamic: bool = True
+    respondable: bool = True
+    visible: bool = False
+    relative_to: int = -1
+    alias: str | None = None
+    mass: float | None = Field(default=None, gt=0.0)
+    friction: float | None = Field(default=None, ge=0.0)
+
+    @field_validator("size")
+    @classmethod
+    def validate_size(cls, value: list[float]) -> list[float]:
+        normalized = _validate_vec3(value, field_name="size")
+        if any(v <= 0.0 for v in normalized):
+            raise ValueError("size values must be > 0")
+        return normalized
+
+    @field_validator("position")
+    @classmethod
+    def validate_position(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="position")
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: list[float]) -> list[float]:
+        return _validate_color(value, field_name="color")
+
+    @field_validator("alias")
+    @classmethod
+    def validate_alias(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text if text else None
+
+
+class SpawnCompositeObjectInput(ToolInputModel):
+    visual_primitive: PrimitiveType = PrimitiveType.CYLINDER
+    proxy_type: PhysicsProxyType = PhysicsProxyType.CYLINDER_PROXY
+    size: list[float] = Field(min_length=3, max_length=3)
+    position: list[float] = Field(min_length=3, max_length=3)
+    visual_color: list[float] = Field(default_factory=lambda: [0.8, 0.8, 0.8], min_length=3, max_length=3)
+    proxy_color: list[float] = Field(default_factory=lambda: [0.2, 0.2, 0.2], min_length=3, max_length=3)
+    dynamic: bool = True
+    visible_proxy: bool = False
+    relative_to: int = -1
+    alias: str = Field(default="composite_object", min_length=1)
+    mass: float | None = Field(default=None, gt=0.0)
+    friction: float | None = Field(default=None, ge=0.0)
+
+    @field_validator("size")
+    @classmethod
+    def validate_size(cls, value: list[float]) -> list[float]:
+        normalized = _validate_vec3(value, field_name="size")
+        if any(v <= 0.0 for v in normalized):
+            raise ValueError("size values must be > 0")
+        return normalized
+
+    @field_validator("position")
+    @classmethod
+    def validate_position(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="position")
+
+    @field_validator("visual_color", "proxy_color")
+    @classmethod
+    def validate_color(cls, value: list[float]) -> list[float]:
+        return _validate_color(value, field_name="color")
+
+    @field_validator("alias")
+    @classmethod
+    def validate_alias(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("alias cannot be blank")
+        return text
 
 
 class SpawnCuboidInput(ToolInputModel):
@@ -426,6 +584,13 @@ class SetupIKLinkInput(ToolInputModel):
     tip_handle: int
     target_handle: int
     constraints_mask: int | None = None
+    constraint_policy: ConstraintPolicy | None = None
+
+    @model_validator(mode="after")
+    def validate_constraint_args(self) -> "SetupIKLinkInput":
+        if self.constraints_mask is not None and self.constraint_policy is not None:
+            raise ValueError("constraints_mask and constraint_policy cannot both be provided")
+        return self
 
 
 class GetJointPositionInput(ToolInputModel):
@@ -476,6 +641,43 @@ class MoveIKTargetInput(ToolInputModel):
     @classmethod
     def validate_position(cls, value: list[float]) -> list[float]:
         return _validate_vec3(value, field_name="position")
+
+
+class MoveIKTargetCheckedInput(ToolInputModel):
+    environment_handle: int
+    group_handle: int
+    target_handle: int
+    tip_handle: int
+    position: list[float] = Field(min_length=3, max_length=3)
+    orientation_deg: list[float] | None = Field(default=None, min_length=3, max_length=3)
+    relative_to: int = -1
+    steps: int = Field(default=10, ge=1, le=500)
+    max_position_error: float = Field(default=0.01, gt=0.0)
+    max_orientation_error_deg: float = Field(default=5.0, gt=0.0)
+    record_joint_handles: list[int] = Field(default_factory=list, max_length=64)
+    collision_pairs: list[list[int]] = Field(default_factory=list, max_length=64)
+
+    @field_validator("position")
+    @classmethod
+    def validate_position(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="position")
+
+    @field_validator("orientation_deg")
+    @classmethod
+    def validate_orientation(cls, value: list[float] | None) -> list[float] | None:
+        if value is None:
+            return None
+        return _validate_vec3(value, field_name="orientation_deg")
+
+    @field_validator("collision_pairs")
+    @classmethod
+    def validate_collision_pairs(cls, value: list[list[int]]) -> list[list[int]]:
+        out: list[list[int]] = []
+        for pair in value:
+            if len(pair) != 2:
+                raise ValueError("each collision pair must contain exactly two handles")
+            out.append([int(pair[0]), int(pair[1])])
+        return out
 
 
 class SetJointTargetVelocityInput(ToolInputModel):
@@ -604,6 +806,7 @@ class SetupAbbArmIKInput(ToolInputModel):
     tip_path: str = Field(default="/IRB4600/IkTip", min_length=1)
     target_path: str = Field(default="/IRB4600/IkTarget", min_length=1)
     constraints_mask: int | None = None
+    constraint_policy: ConstraintPolicy | None = None
     verify_motion: bool = True
     test_offset: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.02], min_length=3, max_length=3)
     restore_target: bool = True
@@ -623,6 +826,12 @@ class SetupAbbArmIKInput(ToolInputModel):
     @classmethod
     def validate_test_offset(cls, value: list[float]) -> list[float]:
         return _validate_vec3(value, field_name="test_offset")
+
+    @model_validator(mode="after")
+    def validate_constraint_args(self) -> "SetupAbbArmIKInput":
+        if self.constraints_mask is not None and self.constraint_policy is not None:
+            raise ValueError("constraints_mask and constraint_policy cannot both be provided")
+        return self
 
 
 class ActuateYouBotGripperInput(ToolInputModel):
@@ -857,6 +1066,49 @@ class ExecuteSteppedIKPathInput(ToolInputModel):
         return [_validate_vec3(item, field_name="waypoint") for item in value]
 
 
+class ExecuteSteppedIKPathCheckedInput(ToolInputModel):
+    environment_handle: int
+    group_handle: int
+    target_handle: int
+    tip_handle: int
+    waypoints: list[list[float]] = Field(min_length=1, max_length=1000)
+    orientation_deg: list[float] | None = Field(default=None, min_length=3, max_length=3)
+    relative_to: int = -1
+    ik_steps_per_waypoint: int = Field(default=10, ge=1, le=500)
+    simulation_steps_per_waypoint: int = Field(default=1, ge=1, le=1000)
+    start_simulation: bool = True
+    keep_stepping_enabled: bool = True
+    max_position_error: float = Field(default=0.01, gt=0.0)
+    max_orientation_error_deg: float = Field(default=5.0, gt=0.0)
+    record_joint_handles: list[int] = Field(default_factory=list, max_length=64)
+    record_handles: list[int] = Field(default_factory=list, max_length=64)
+    record_every: int = Field(default=1, ge=1, le=1000)
+    stop_on_failure: bool = True
+    collision_pairs: list[list[int]] = Field(default_factory=list, max_length=64)
+
+    @field_validator("waypoints")
+    @classmethod
+    def validate_waypoints(cls, value: list[list[float]]) -> list[list[float]]:
+        return [_validate_vec3(item, field_name="waypoint") for item in value]
+
+    @field_validator("orientation_deg")
+    @classmethod
+    def validate_orientation(cls, value: list[float] | None) -> list[float] | None:
+        if value is None:
+            return None
+        return _validate_vec3(value, field_name="orientation_deg")
+
+    @field_validator("collision_pairs")
+    @classmethod
+    def validate_collision_pairs(cls, value: list[list[int]]) -> list[list[int]]:
+        out: list[list[int]] = []
+        for pair in value:
+            if len(pair) != 2:
+                raise ValueError("each collision pair must contain exactly two handles")
+            out.append([int(pair[0]), int(pair[1])])
+        return out
+
+
 class VerifyJointPositionsReachedInput(ToolInputModel):
     joint_handles: list[int] = Field(min_length=1, max_length=32)
     target_positions: list[float] = Field(min_length=1, max_length=32)
@@ -962,6 +1214,96 @@ class SetShapeDynamicsInput(ToolInputModel):
     friction: float | None = Field(default=None, ge=0.0)
 
 
+class CreatePusherToolForAbbInput(ToolInputModel):
+    robot_path: str = Field(default="/IRB4600", min_length=1)
+    parent_path: str | None = None
+    alias: str = Field(default="pusher_tip", min_length=1)
+    shape: PrimitiveType = PrimitiveType.SPHERE
+    size: list[float] | None = Field(default=None, min_length=3, max_length=3)
+    radius: float = Field(default=0.02, gt=0.0)
+    offset: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0], min_length=3, max_length=3)
+    color: list[float] = Field(default_factory=lambda: [1.0, 0.25, 0.05], min_length=3, max_length=3)
+    static: bool = True
+    respondable: bool = True
+    visible: bool = True
+    reuse_existing: bool = True
+
+    @field_validator("robot_path", "parent_path")
+    @classmethod
+    def validate_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            raise ValueError("path cannot be blank")
+        return text
+
+    @field_validator("alias")
+    @classmethod
+    def validate_alias(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("alias cannot be blank")
+        return text
+
+    @field_validator("size")
+    @classmethod
+    def validate_size(cls, value: list[float] | None) -> list[float] | None:
+        if value is None:
+            return None
+        normalized = _validate_vec3(value, field_name="size")
+        if any(v <= 0.0 for v in normalized):
+            raise ValueError("size values must be > 0")
+        return normalized
+
+    @field_validator("offset")
+    @classmethod
+    def validate_offset(cls, value: list[float]) -> list[float]:
+        return _validate_vec3(value, field_name="offset")
+
+    @field_validator("color")
+    @classmethod
+    def validate_color(cls, value: list[float]) -> list[float]:
+        return _validate_color(value, field_name="color")
+
+
+class PushObjectWithAbbInput(ToolInputModel):
+    robot_path: str = Field(default="/IRB4600", min_length=1)
+    object_handle: int
+    push_direction: list[float] = Field(default_factory=lambda: [1.0, 0.0, 0.0], min_length=3, max_length=3)
+    push_distance: float = Field(default=0.10, gt=0.0)
+    contact_height_ratio: float = Field(default=0.5, ge=0.0, le=1.0)
+    pre_contact_clearance: float = Field(default=0.04, ge=0.0)
+    contact_margin: float = Field(default=0.005, ge=0.0)
+    table_handle: int | None = None
+    pusher_tool_handle: int | None = None
+    max_tip_error: float = Field(default=0.015, gt=0.0)
+    simulation_steps_per_waypoint: int = Field(default=5, ge=1, le=1000)
+    ik_steps_per_waypoint: int = Field(default=10, ge=1, le=500)
+    object_mass: float = Field(default=0.1, gt=0.0)
+    object_friction: float | None = Field(default=None, ge=0.0)
+    min_moved_distance: float = Field(default=0.01, ge=0.0)
+    settle_steps: int = Field(default=20, ge=0, le=5000)
+    constraint_policy: ConstraintPolicy = ConstraintPolicy.POSITION_ONLY
+
+    @field_validator("robot_path")
+    @classmethod
+    def validate_robot_path(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("robot_path cannot be empty")
+        return text
+
+    @field_validator("push_direction")
+    @classmethod
+    def validate_push_direction(cls, value: list[float]) -> list[float]:
+        normalized = _validate_vec3(value, field_name="push_direction")
+        norm = math.sqrt(sum(v * v for v in normalized))
+        if norm <= 0.0:
+            raise ValueError("push_direction cannot be zero")
+        return normalized
+
+
 class ReadProximitySensorInput(ToolInputModel):
     handle: int
 
@@ -1039,7 +1381,7 @@ class CreatePointCloudPotteryCylinderInput(ToolInputModel):
     wall_thickness: float = Field(default=0.0, ge=0.0)
     angular_step_deg: float | None = Field(default=None, gt=0.0, le=45.0)
     include_caps: bool = True
-    use_explicit_points: bool = False
+    use_explicit_points: bool = True
 
     @field_validator("center")
     @classmethod
