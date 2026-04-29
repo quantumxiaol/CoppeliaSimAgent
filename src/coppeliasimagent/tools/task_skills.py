@@ -725,13 +725,15 @@ def push_object_with_abb(
                 record_joint_handles=joint_handles,
             )
             ik_results.append(ik_result)
+            collided_before_step = _safe_collision(pusher_handle, payload.object_handle)
             step = _step_simulation_checked(
                 steps=payload.simulation_steps_per_waypoint,
                 release_on_failure=payload.release_stepping_on_finish,
             )
             if not bool(step.get("ok", True)):
                 failure_reason = "REMOTE_API_STEP_TIMEOUT"
-            collided = _safe_collision(pusher_handle, payload.object_handle)
+            collided_after_step = _safe_collision(pusher_handle, payload.object_handle)
+            collided = collided_before_step or collided_after_step
             contact_happened = contact_happened or collided
             object_position = [float(v) for v in sim.getObjectPosition(payload.object_handle, -1)]
             pusher_position_now = [float(v) for v in sim.getObjectPosition(pusher_handle, -1)]
@@ -751,6 +753,8 @@ def push_object_with_abb(
                     "pusher_position": pusher_position_now,
                     "object_position": object_position,
                     "pusher_object_collision": collided,
+                    "pusher_object_collision_before_step": collided_before_step,
+                    "pusher_object_collision_after_step": collided_after_step,
                     "joint_forces": forces,
                     "step_result": step,
                 }
