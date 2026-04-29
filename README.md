@@ -337,7 +337,7 @@ uv run test/live_task_point_cloud_polishing.py
 
 - `get_simulation_state()`
 - `get_plugin_status(plugin_names, refresh)`
-- `collect_remote_api_diagnostics(host, port, timeout_s, plugin_names, include_scene_sample, object_name_queries, scene_sample_limit, include_process_probe, probe_step)`
+- `collect_remote_api_diagnostics(host, port, timeout_s, plugin_names, include_scene_sample, object_name_queries, scene_sample_limit, include_process_probe, probe_step, stale_toolcli_min_age_s, cleanup_stale_toolcli, record_log, log_path)`
 - `start_simulation()`
 - `pause_simulation()`
 - `stop_simulation()`
@@ -421,7 +421,8 @@ uv run test/live_task_point_cloud_polishing.py
 ### ABB 任务级 skills
 
 - `create_pusher_tool_for_abb(robot_path, parent_path, alias, shape, size, radius, offset, color, static, respondable, visible, reuse_existing)`
-- `push_object_with_abb(robot_path, object_handle, push_direction, push_distance, contact_height_ratio, pre_contact_clearance, contact_margin, table_handle, pusher_tool_handle, max_tip_error, simulation_steps_per_waypoint)`
+- `create_tabletop_push_scene(robot_path, table_size, table_height, object_radius, object_height, object_mass, object_friction, preferred_workspace, push_direction, contact_height_ratio, pre_contact_clearance, contact_margin, push_distance, max_tip_error, ik_steps_per_waypoint, alias_prefix, constraint_policy)`
+- `push_object_with_abb(robot_path, object_handle, push_direction, push_distance, contact_height_ratio, pre_contact_clearance, contact_margin, table_handle, pusher_tool_handle, max_tip_error, simulation_steps_per_waypoint, ik_steps_per_waypoint, preflight_only, auto_create_pusher, release_stepping_on_finish)`
 
 ### 传感器与接触监控
 
@@ -445,8 +446,10 @@ uv run test/live_task_point_cloud_polishing.py
 ## IK 与 Python Wrapper 排查
 
 - `setup_ik_link` / `move_ik_target` 已经实现；如果执行时报 `PluginUnavailableError: Plugin 'simIK' is unavailable`，优先说明当前运行中的 CoppeliaSim 实例没有暴露 `simIK`，不是项目 venv 缺 Python 包。
-- 机器人任务优先使用 `move_ik_target_checked`、`execute_stepped_ik_path_checked` 和 `push_object_with_abb`。这些工具会返回 tip-target 残差、关节变化量、接触/移动证据和结构化失败原因，例如 `IK_TARGET_UNREACHABLE`、`JOINTS_NOT_MOVING`、`NO_CONTACT`。
-- `collect_remote_api_diagnostics` 用于排查 ZMQ Remote API 卡死/超时：它会汇总 socket 探测、Remote API 连接异常、插件状态、仿真状态、场景对象样本和 traceback。
+- 机器人任务优先使用 `move_ik_target_checked`、`execute_stepped_ik_path_checked`、`create_tabletop_push_scene` 和 `push_object_with_abb`。这些工具会返回 tip-target 残差、关节变化量、接触/移动证据和结构化失败原因，例如 `IK_TARGET_UNREACHABLE`、`JOINTS_NOT_MOVING`、`NO_CONTACT`、`REMOTE_API_STEP_TIMEOUT`。
+- `push_object_with_abb` 会在启动仿真 stepping 前对 pre-contact/contact/post-contact 三点执行 IK preflight；任一点不可达会直接返回 `IK_TARGET_UNREACHABLE` 和建议桌子/瓶子放置位置，不进入 pushing。
+- `collect_remote_api_diagnostics` 用于排查 ZMQ Remote API 卡死/超时：它会汇总 socket 探测、Remote API 连接异常、插件状态、仿真状态、场景对象样本、stale toolcli 进程、ZMQ server 恢复状态和 traceback。
+- 不要并行开多个 `toolcli` 做机器人动作；涉及 stepping、IK 执行或接触动力学时，使用单个任务级工具独占完成。
 - 可以先直接调用下面两个命令确认：
 
 ```bash

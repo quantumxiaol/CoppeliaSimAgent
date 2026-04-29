@@ -73,7 +73,7 @@ from ..tools.simulation import (
     start_simulation,
     stop_simulation,
 )
-from ..tools.task_skills import create_pusher_tool_for_abb, push_object_with_abb
+from ..tools.task_skills import create_pusher_tool_for_abb, create_tabletop_push_scene, push_object_with_abb
 from ..tools.trajectory import execute_cartesian_waypoints, execute_joint_trajectory, execute_stepped_ik_path_checked
 from ..tools.verification import (
     verify_force_threshold,
@@ -130,6 +130,10 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         scene_sample_limit: int = 40,
         include_process_probe: bool = True,
         probe_step: bool = False,
+        stale_toolcli_min_age_s: float = 30.0,
+        cleanup_stale_toolcli: bool = False,
+        record_log: bool = True,
+        log_path: str | None = "/tmp/coppeliasimagent_remote_api_diagnostics.jsonl",
     ) -> dict[str, object]:
         return collect_remote_api_diagnostics(
             host=host,
@@ -141,6 +145,10 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             scene_sample_limit=scene_sample_limit,
             include_process_probe=include_process_probe,
             probe_step=probe_step,
+            stale_toolcli_min_age_s=stale_toolcli_min_age_s,
+            cleanup_stale_toolcli=cleanup_stale_toolcli,
+            record_log=record_log,
+            log_path=log_path,
         )
 
     @mcp.tool(name="start_simulation", description="Start or resume simulation execution.")
@@ -599,7 +607,7 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         robot_path: str = "/IRB4600",
         parent_path: str | None = None,
         alias: str = "pusher_tip",
-        shape: str = "sphere",
+        shape: str = "cuboid",
         size: list[float] | None = None,
         radius: float = 0.02,
         offset: list[float] | None = None,
@@ -624,6 +632,46 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             reuse_existing=reuse_existing,
         )
 
+    @mcp.tool(name="create_tabletop_push_scene", description="Create a table and can in an ABB-reachable push region.")
+    def create_tabletop_push_scene_tool(
+        robot_path: str = "/IRB4600",
+        table_size: list[float] | None = None,
+        table_height: float | None = None,
+        object_radius: float = 0.05,
+        object_height: float = 0.12,
+        object_mass: float = 0.08,
+        object_friction: float | None = 0.45,
+        preferred_workspace: list[float] | None = None,
+        push_direction: list[float] | None = None,
+        contact_height_ratio: float = 0.55,
+        pre_contact_clearance: float = 0.05,
+        contact_margin: float = 0.005,
+        push_distance: float = 0.08,
+        max_tip_error: float = 0.02,
+        ik_steps_per_waypoint: int = 12,
+        alias_prefix: str = "push_test",
+        constraint_policy: str = "position_only",
+    ) -> dict[str, Any]:
+        return create_tabletop_push_scene(
+            robot_path=robot_path,
+            table_size=table_size,
+            table_height=table_height,
+            object_radius=object_radius,
+            object_height=object_height,
+            object_mass=object_mass,
+            object_friction=object_friction,
+            preferred_workspace=preferred_workspace,
+            push_direction=push_direction,
+            contact_height_ratio=contact_height_ratio,
+            pre_contact_clearance=pre_contact_clearance,
+            contact_margin=contact_margin,
+            push_distance=push_distance,
+            max_tip_error=max_tip_error,
+            ik_steps_per_waypoint=ik_steps_per_waypoint,
+            alias_prefix=alias_prefix,
+            constraint_policy=constraint_policy,
+        )
+
     @mcp.tool(name="push_object_with_abb", description="Push an object with ABB using checked IK and verification.")
     def push_object_with_abb_tool(
         robot_path: str = "/IRB4600",
@@ -643,6 +691,9 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         min_moved_distance: float = 0.01,
         settle_steps: int = 20,
         constraint_policy: str = "position_only",
+        preflight_only: bool = False,
+        auto_create_pusher: bool = True,
+        release_stepping_on_finish: bool = True,
     ) -> dict[str, Any]:
         return push_object_with_abb(
             robot_path=robot_path,
@@ -662,6 +713,9 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
             min_moved_distance=min_moved_distance,
             settle_steps=settle_steps,
             constraint_policy=constraint_policy,
+            preflight_only=preflight_only,
+            auto_create_pusher=auto_create_pusher,
+            release_stepping_on_finish=release_stepping_on_finish,
         )
 
     @mcp.tool(name="find_robot_joints", description="Find joint handles below a robot model path.")

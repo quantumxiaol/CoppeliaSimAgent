@@ -62,6 +62,7 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("spawn_physics_proxy", names)
         self.assertIn("spawn_composite_object", names)
         self.assertIn("create_pusher_tool_for_abb", names)
+        self.assertIn("create_tabletop_push_scene", names)
         self.assertIn("push_object_with_abb", names)
 
     def test_unknown_tool_raises(self) -> None:
@@ -84,6 +85,7 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("start_simulation", names)
         self.assertIn("execute_polishing_path", names)
         self.assertIn("create_point_cloud_pottery_cylinder", names)
+        self.assertIn("create_tabletop_push_scene", names)
         self.assertIn("push_object_with_abb", names)
 
 

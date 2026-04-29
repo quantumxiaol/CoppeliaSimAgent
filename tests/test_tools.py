@@ -24,6 +24,7 @@ from coppeliasimagent.tools import (
     scene,
     sensors,
     simulation,
+    task_skills,
     trajectory,
     verification,
 )
@@ -756,6 +757,40 @@ class TestTools(unittest.TestCase):
         self.assertFalse(out["remote_api"]["connected"])
         self.assertEqual(out["remote_api"]["error"]["type"], "RuntimeError")
         self.assertIn("remote api unavailable", out["remote_api"]["error"]["message"])
+        self.assertEqual(out["zmq_server_status"]["status"], "socket_unreachable")
+
+    def test_remote_api_diagnostics_reports_stale_toolcli_probe(self) -> None:
+        process_probe = {
+            "stale_toolcli_processes": {
+                "min_age_s": 1.0,
+                "matches": [{"pid": 123, "age_s": 99.0, "stale": True, "command": "uv run coppelia-toolcli"}],
+                "stale_count": 1,
+                "cleanup": [{"pid": 123, "ok": True, "signal": "SIGTERM"}],
+            }
+        }
+        with patch(
+            "coppeliasimagent.tools.diagnostics._socket_probe",
+            return_value={"ok": False, "error": {"message": "closed"}},
+        ), patch(
+            "coppeliasimagent.tools.diagnostics._process_probe",
+            return_value=process_probe,
+        ) as process, patch(
+            "coppeliasimagent.tools.diagnostics.SimConnection",
+            side_effect=RuntimeError("remote api unavailable"),
+        ):
+            out = diagnostics.collect_remote_api_diagnostics(
+                timeout_s=0.1,
+                include_process_probe=True,
+                include_scene_sample=False,
+                stale_toolcli_min_age_s=1.0,
+                cleanup_stale_toolcli=True,
+                record_log=False,
+            )
+
+        process.assert_called_once_with(stale_toolcli_min_age_s=1.0, cleanup_stale_toolcli=True)
+        stale = out["process_probe"]["stale_toolcli_processes"]
+        self.assertEqual(stale["stale_count"], 1)
+        self.assertEqual(stale["cleanup"][0]["signal"], "SIGTERM")
 
     def test_duplicate_object_with_offset(self) -> None:
         sim = FakeSim()
@@ -1200,9 +1235,120 @@ class TestTools(unittest.TestCase):
             out = create_pusher_tool_for_abb(robot_path="/IRB4600", radius=0.015)
 
         self.assertEqual(out["alias"], "pusher_tip")
+        self.assertEqual(out["shape"], "cuboid")
         self.assertEqual(out["parent_handle"], 38)
         self.assertEqual(sim.object_parents[out["handle"]], 38)
+        create_calls = [call for call in sim.calls if call[0] == "createPrimitiveShape"]
+        self.assertEqual(create_calls[0][1][0], sim.primitiveshape_cuboid)
+        self.assertEqual(create_calls[0][1][1], [0.04, 0.04, 0.04])
         self.assertEqual(sim.object_int_params[(out["handle"], sim.shapeintparam_respondable)], 1)
+
+    def test_push_object_with_abb_preflight_unreachable_skips_stepping(self) -> None:
+        sim = FakeSim()
+        sim.object_types[38] = sim.object_dummy_type
+        sim.object_names[38] = "IkTip"
+        sim.object_positions[38] = [0.8, 0.0, 0.8]
+        sim.object_orientations[38] = [0.0, 0.0, 0.0]
+        sim.object_parents[38] = 36
+        sim.object_types[39] = sim.object_dummy_type
+        sim.object_names[39] = "IkTarget"
+        sim.object_positions[39] = [0.8, 0.0, 0.8]
+        sim.object_orientations[39] = [0.0, 0.0, 0.0]
+        sim.object_parents[39] = -1
+        sim.object_types[100] = sim.object_shape_type
+        sim.object_names[100] = "pusher_tip"
+        sim.object_positions[100] = [0.8, 0.0, 0.8]
+        sim.object_orientations[100] = [0.0, 0.0, 0.0]
+        sim.object_parents[100] = 38
+        failed_ik = {
+            "ok": False,
+            "failure_reason": "TARGET_MOVED_BUT_TIP_NOT_MOVED",
+            "position_error": 0.2,
+            "tip_position": [0.8, 0.0, 0.8],
+            "target_position": [0.5, 0.0, 0.2],
+            "joint_delta_norm": 0.0,
+        }
+
+        with patch("coppeliasimagent.tools.task_skills.get_sim", return_value=sim), patch(
+            "coppeliasimagent.tools.task_skills.setup_abb_arm_ik",
+            return_value={
+                "robot_handle": 30,
+                "tip_handle": 38,
+                "target_handle": 39,
+                "environment_handle": 500,
+                "group_handle": 501,
+            },
+        ), patch(
+            "coppeliasimagent.tools.task_skills.create_pusher_tool_for_abb",
+            return_value={"handle": 100, "created": True, "shape": "cuboid"},
+        ) as create_pusher, patch(
+            "coppeliasimagent.tools.task_skills.configure_abb_arm_drive",
+            return_value={"joint_handles": [31, 32, 33, 34, 35, 36]},
+        ), patch(
+            "coppeliasimagent.tools.task_skills.set_shape_dynamics",
+            return_value={"ok": True},
+        ), patch(
+            "coppeliasimagent.tools.task_skills.move_ik_target_checked",
+            return_value=failed_ik,
+        ), patch("coppeliasimagent.tools.task_skills.step_simulation") as step:
+            out = task_skills.push_object_with_abb(object_handle=1)
+
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["failure_reason"], "IK_TARGET_UNREACHABLE")
+        self.assertIsNotNone(out["suggestion"])
+        create_pusher.assert_called_once()
+        step.assert_not_called()
+
+    def test_create_tabletop_push_scene_uses_checked_reachable_candidate(self) -> None:
+        sim = FakeSim()
+        sim.object_types[38] = sim.object_dummy_type
+        sim.object_names[38] = "IkTip"
+        sim.object_positions[38] = [1.0, 0.0, 0.8]
+        sim.object_orientations[38] = [0.0, 0.0, 0.0]
+        sim.object_parents[38] = 36
+        ok_ik = {
+            "ok": True,
+            "failure_reason": None,
+            "position_error": 0.001,
+            "target_position": [1.0, 0.0, 0.8],
+            "tip_position": [1.0, 0.0, 0.8],
+        }
+
+        with patch("coppeliasimagent.tools.task_skills.get_sim", return_value=sim), patch(
+            "coppeliasimagent.tools.task_skills.setup_abb_arm_ik",
+            return_value={
+                "robot_handle": 30,
+                "tip_handle": 38,
+                "target_handle": 39,
+                "environment_handle": 500,
+                "group_handle": 501,
+            },
+        ), patch(
+            "coppeliasimagent.tools.task_skills.find_robot_joints",
+            return_value={"joint_handles": [31, 32, 33, 34, 35, 36]},
+        ), patch(
+            "coppeliasimagent.tools.task_skills.move_ik_target_checked",
+            return_value=ok_ik,
+        ) as checked, patch(
+            "coppeliasimagent.tools.task_skills.spawn_cuboid",
+            return_value=200,
+        ), patch(
+            "coppeliasimagent.tools.task_skills.spawn_composite_object",
+            return_value={"proxy_handle": 201, "visual_handle": 202},
+        ), patch(
+            "coppeliasimagent.tools.task_skills.create_pusher_tool_for_abb",
+            return_value={"handle": 203, "created": True, "shape": "cuboid"},
+        ), patch(
+            "coppeliasimagent.tools.task_skills.set_shape_dynamics",
+            return_value={"ok": True},
+        ), patch("coppeliasimagent.tools.task_skills._set_object_alias"):
+            out = task_skills.create_tabletop_push_scene()
+
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["object_handle"], 201)
+        self.assertEqual(out["pusher_tool_handle"], 203)
+        self.assertGreaterEqual(checked.call_count, 3)
+        self.assertNotEqual(out["object_center"], [0.82, 0.0, 0.81])
 
 
 if __name__ == "__main__":

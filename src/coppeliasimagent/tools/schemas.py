@@ -524,6 +524,10 @@ class CollectRemoteApiDiagnosticsInput(ToolInputModel):
     scene_sample_limit: int = Field(default=40, ge=1, le=500)
     include_process_probe: bool = True
     probe_step: bool = False
+    stale_toolcli_min_age_s: float = Field(default=30.0, ge=0.0, le=86400.0)
+    cleanup_stale_toolcli: bool = False
+    record_log: bool = True
+    log_path: str | None = "/tmp/coppeliasimagent_remote_api_diagnostics.jsonl"
 
     @field_validator("host")
     @classmethod
@@ -540,6 +544,22 @@ class CollectRemoteApiDiagnosticsInput(ToolInputModel):
         if not math.isfinite(value):
             raise ValueError("timeout_s must be finite")
         return value
+
+    @field_validator("stale_toolcli_min_age_s")
+    @classmethod
+    def validate_stale_age(cls, value: float) -> float:
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("stale_toolcli_min_age_s must be finite")
+        return value
+
+    @field_validator("log_path")
+    @classmethod
+    def validate_log_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text if text else None
 
     @field_validator("plugin_names", "object_name_queries")
     @classmethod
@@ -1256,8 +1276,8 @@ class CreatePusherToolForAbbInput(ToolInputModel):
     robot_path: str = Field(default="/IRB4600", min_length=1)
     parent_path: str | None = None
     alias: str = Field(default="pusher_tip", min_length=1)
-    shape: PrimitiveType = PrimitiveType.SPHERE
-    size: list[float] | None = Field(default=None, min_length=3, max_length=3)
+    shape: PrimitiveType = PrimitiveType.CUBOID
+    size: list[float] | None = Field(default_factory=lambda: [0.04, 0.04, 0.04], min_length=3, max_length=3)
     radius: float = Field(default=0.02, gt=0.0)
     offset: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0], min_length=3, max_length=3)
     color: list[float] = Field(default_factory=lambda: [1.0, 0.25, 0.05], min_length=3, max_length=3)
@@ -1323,6 +1343,9 @@ class PushObjectWithAbbInput(ToolInputModel):
     min_moved_distance: float = Field(default=0.01, ge=0.0)
     settle_steps: int = Field(default=20, ge=0, le=5000)
     constraint_policy: ConstraintPolicy = ConstraintPolicy.POSITION_ONLY
+    preflight_only: bool = False
+    auto_create_pusher: bool = True
+    release_stepping_on_finish: bool = True
 
     @field_validator("robot_path")
     @classmethod
@@ -1340,6 +1363,65 @@ class PushObjectWithAbbInput(ToolInputModel):
         if norm <= 0.0:
             raise ValueError("push_direction cannot be zero")
         return normalized
+
+
+class CreateTabletopPushSceneInput(ToolInputModel):
+    robot_path: str = Field(default="/IRB4600", min_length=1)
+    table_size: list[float] = Field(default_factory=lambda: [0.8, 0.6, 0.05], min_length=3, max_length=3)
+    table_height: float | None = Field(default=None, gt=0.0)
+    object_radius: float = Field(default=0.05, gt=0.0)
+    object_height: float = Field(default=0.12, gt=0.0)
+    object_mass: float = Field(default=0.08, gt=0.0)
+    object_friction: float | None = Field(default=0.45, ge=0.0)
+    preferred_workspace: list[float] | None = Field(default=None, min_length=3, max_length=3)
+    push_direction: list[float] | None = Field(default=None, min_length=3, max_length=3)
+    contact_height_ratio: float = Field(default=0.55, ge=0.0, le=1.0)
+    pre_contact_clearance: float = Field(default=0.05, ge=0.0)
+    contact_margin: float = Field(default=0.005, ge=0.0)
+    push_distance: float = Field(default=0.08, gt=0.0)
+    max_tip_error: float = Field(default=0.02, gt=0.0)
+    ik_steps_per_waypoint: int = Field(default=12, ge=1, le=500)
+    alias_prefix: str = Field(default="push_test", min_length=1)
+    constraint_policy: ConstraintPolicy = ConstraintPolicy.POSITION_ONLY
+
+    @field_validator("robot_path")
+    @classmethod
+    def validate_robot_path(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("robot_path cannot be empty")
+        return text
+
+    @field_validator("table_size")
+    @classmethod
+    def validate_table_size(cls, value: list[float]) -> list[float]:
+        normalized = _validate_vec3(value, field_name="table_size")
+        if any(v <= 0.0 for v in normalized):
+            raise ValueError("table_size values must be > 0")
+        return normalized
+
+    @field_validator("preferred_workspace", "push_direction")
+    @classmethod
+    def validate_optional_vec3(cls, value: list[float] | None) -> list[float] | None:
+        if value is None:
+            return None
+        return _validate_vec3(value, field_name="vector")
+
+    @field_validator("alias_prefix")
+    @classmethod
+    def validate_alias_prefix(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("alias_prefix cannot be blank")
+        return text
+
+    @model_validator(mode="after")
+    def validate_push_direction_norm(self) -> "CreateTabletopPushSceneInput":
+        if self.push_direction is not None:
+            norm = math.sqrt(sum(float(v) * float(v) for v in self.push_direction))
+            if norm <= 0.0:
+                raise ValueError("push_direction cannot be zero")
+        return self
 
 
 class ReadProximitySensorInput(ToolInputModel):

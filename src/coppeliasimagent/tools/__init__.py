@@ -73,7 +73,7 @@ from .simulation import (
     start_simulation,
     stop_simulation,
 )
-from .task_skills import create_pusher_tool_for_abb, push_object_with_abb
+from .task_skills import create_pusher_tool_for_abb, create_tabletop_push_scene, push_object_with_abb
 from .trajectory import (
     execute_cartesian_waypoints,
     execute_joint_trajectory,
@@ -97,6 +97,7 @@ __all__ = [
     "configure_abb_arm_drive",
     "collect_remote_api_diagnostics",
     "create_pusher_tool_for_abb",
+    "create_tabletop_push_scene",
     "create_point_cloud_surface_from_shape",
     "create_point_cloud_pottery_cylinder",
     "detach_object",

@@ -73,7 +73,7 @@ from ..tools.simulation import (
     start_simulation,
     stop_simulation,
 )
-from ..tools.task_skills import create_pusher_tool_for_abb, push_object_with_abb
+from ..tools.task_skills import create_pusher_tool_for_abb, create_tabletop_push_scene, push_object_with_abb
 from ..tools.trajectory import execute_cartesian_waypoints, execute_joint_trajectory, execute_stepped_ik_path
 from ..tools.trajectory import execute_stepped_ik_path_checked
 from ..tools.verification import (
@@ -91,6 +91,7 @@ from ..tools.schemas import (
     CollectRemoteApiDiagnosticsInput,
     ConfigureAbbArmDriveInput,
     CreatePusherToolForAbbInput,
+    CreateTabletopPushSceneInput,
     CreatePointCloudPotteryCylinderInput,
     CreatePointCloudSurfaceFromShapeInput,
     DetachObjectInput,
@@ -500,6 +501,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Create or reuse a visible respondable pusher tool attached near the ABB IK tip.",
         input_model=CreatePusherToolForAbbInput,
         handler=create_pusher_tool_for_abb,
+    ),
+    "create_tabletop_push_scene": ToolDefinition(
+        name="create_tabletop_push_scene",
+        description="Create a table and can in a checked ABB-reachable tabletop push region.",
+        input_model=CreateTabletopPushSceneInput,
+        handler=create_tabletop_push_scene,
     ),
     "push_object_with_abb": ToolDefinition(
         name="push_object_with_abb",
