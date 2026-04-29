@@ -36,6 +36,7 @@ python skills/toolcli.py list
 
 - `get_simulation_state`
 - `get_plugin_status`
+- `collect_remote_api_diagnostics`
 - `start_simulation`
 - `pause_simulation`
 - `stop_simulation`
@@ -154,6 +155,7 @@ uv run test/live_task_point_cloud_polishing.py
 - 精确参数请用 `show` 查看，不要靠猜
 - `call` 会真实调用底层工具；如果当前没有连上 CoppeliaSim，对需要仿真连接的工具会直接报错
 - `get_plugin_status` 用来区分 simulator 侧插件问题（如 `simIK`）与 Python wrapper / `pyzmq` / `cbor2` 问题
+- `collect_remote_api_diagnostics` 用于收集 Remote API 连接状态、插件状态、仿真状态、场景对象样本、匹配对象位姿和异常 traceback；当 ZMQ server 不响应时也会返回连接失败上下文。
 - `create_point_cloud_pottery_cylinder` 默认 `use_explicit_points=True`，避免 cylinder 物理代理 workaround 把陶罐点云采成方盒表面。
 - `spawn_visual_cylinder` 只负责真实视觉圆柱；需要动力学推动时，用 `spawn_physics_proxy(proxy_type="cylinder_proxy")` 或 `spawn_composite_object` 组合视觉体和隐藏物理代理。
 - 机器人闭环任务优先用 `move_ik_target_checked` / `execute_stepped_ik_path_checked` / `push_object_with_abb`，它们会返回残差、关节变化、接触/移动结果和结构化失败原因。

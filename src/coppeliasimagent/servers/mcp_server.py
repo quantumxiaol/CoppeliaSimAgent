@@ -7,6 +7,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from ..tools.diagnostics import collect_remote_api_diagnostics
 from ..tools.dynamics import get_object_velocity, reset_dynamic_object, set_shape_dynamics
 from ..tools.grasp import attach_object_to_gripper, detach_object, grasp_object, release_object
 from ..tools.kinematics import (
@@ -117,6 +118,30 @@ def create_mcp_server(*, host: str = "127.0.0.1", port: int = 7777, debug: bool 
         refresh: bool = False,
     ) -> dict[str, object]:
         return get_plugin_status(plugin_names=plugin_names, refresh=refresh)
+
+    @mcp.tool(name="collect_remote_api_diagnostics", description="Collect Remote API failure diagnostics.")
+    def collect_remote_api_diagnostics_tool(
+        host: str | None = None,
+        port: int | None = None,
+        timeout_s: float = 3.0,
+        plugin_names: list[str] | None = None,
+        include_scene_sample: bool = True,
+        object_name_queries: list[str] | None = None,
+        scene_sample_limit: int = 40,
+        include_process_probe: bool = True,
+        probe_step: bool = False,
+    ) -> dict[str, object]:
+        return collect_remote_api_diagnostics(
+            host=host,
+            port=port,
+            timeout_s=timeout_s,
+            plugin_names=plugin_names,
+            include_scene_sample=include_scene_sample,
+            object_name_queries=object_name_queries,
+            scene_sample_limit=scene_sample_limit,
+            include_process_probe=include_process_probe,
+            probe_step=probe_step,
+        )
 
     @mcp.tool(name="start_simulation", description="Start or resume simulation execution.")
     def start_simulation_tool() -> dict[str, int | str | bool]:

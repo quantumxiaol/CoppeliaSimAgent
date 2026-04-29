@@ -7,6 +7,7 @@ from typing import Any, Callable, Mapping
 
 from pydantic import BaseModel
 
+from ..tools.diagnostics import collect_remote_api_diagnostics
 from ..tools.dynamics import get_object_velocity, reset_dynamic_object, set_shape_dynamics
 from ..tools.grasp import attach_object_to_gripper, detach_object, grasp_object, release_object
 from ..tools.kinematics import (
@@ -87,6 +88,7 @@ from ..tools.schemas import (
     AttachObjectToGripperInput,
     CheckCollisionInput,
     CheckCollisionMonitorInput,
+    CollectRemoteApiDiagnosticsInput,
     ConfigureAbbArmDriveInput,
     CreatePusherToolForAbbInput,
     CreatePointCloudPotteryCylinderInput,
@@ -204,6 +206,12 @@ TOOL_REGISTRY: dict[str, ToolDefinition] = {
         description="Read availability of simulator-side plugin namespaces such as simIK/simOMPL.",
         input_model=GetPluginStatusInput,
         handler=get_plugin_status,
+    ),
+    "collect_remote_api_diagnostics": ToolDefinition(
+        name="collect_remote_api_diagnostics",
+        description="Collect connection, plugin, scene and exception context for CoppeliaSim Remote API failures.",
+        input_model=CollectRemoteApiDiagnosticsInput,
+        handler=collect_remote_api_diagnostics,
     ),
     "start_simulation": ToolDefinition(
         name="start_simulation",

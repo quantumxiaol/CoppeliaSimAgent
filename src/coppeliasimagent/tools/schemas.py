@@ -514,6 +514,44 @@ class GetPluginStatusInput(ToolInputModel):
         return normalized
 
 
+class CollectRemoteApiDiagnosticsInput(ToolInputModel):
+    host: str | None = None
+    port: int | None = Field(default=None, gt=0, le=65535)
+    timeout_s: float = Field(default=3.0, gt=0.0, le=60.0)
+    plugin_names: list[str] = Field(default_factory=lambda: ["simIK", "simOMPL"])
+    include_scene_sample: bool = True
+    object_name_queries: list[str] = Field(default_factory=lambda: ["IRB4600", "Ik", "push_test", "jar"], max_length=20)
+    scene_sample_limit: int = Field(default=40, ge=1, le=500)
+    include_process_probe: bool = True
+    probe_step: bool = False
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        return text if text else None
+
+    @field_validator("timeout_s")
+    @classmethod
+    def validate_timeout(cls, value: float) -> float:
+        value = float(value)
+        if not math.isfinite(value):
+            raise ValueError("timeout_s must be finite")
+        return value
+
+    @field_validator("plugin_names", "object_name_queries")
+    @classmethod
+    def validate_text_list(cls, value: list[str]) -> list[str]:
+        out: list[str] = []
+        for item in value:
+            text = str(item).strip()
+            if text:
+                out.append(text)
+        return out
+
+
 class StartSimulationInput(EmptyToolInput):
     pass
 

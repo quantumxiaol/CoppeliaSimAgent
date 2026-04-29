@@ -29,6 +29,7 @@ class TestToolRegistry(unittest.TestCase):
         self.assertIn("configure_abb_arm_drive", names)
         self.assertIn("get_simulation_state", names)
         self.assertIn("get_plugin_status", names)
+        self.assertIn("collect_remote_api_diagnostics", names)
         self.assertIn("start_simulation", names)
         self.assertIn("pause_simulation", names)
         self.assertIn("stop_simulation", names)
@@ -75,6 +76,7 @@ class TestToolRegistry(unittest.TestCase):
         tools = get_openai_tools()
         names = {tool["function"]["name"] for tool in tools}
         self.assertIn("spawn_primitive", names)
+        self.assertIn("collect_remote_api_diagnostics", names)
         self.assertIn("actuate_gripper", names)
         self.assertIn("actuate_youbot_gripper", names)
         self.assertIn("stop_youbot_base", names)

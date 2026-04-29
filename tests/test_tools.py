@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 
 from coppeliasimagent.core.exceptions import ToolValidationError
 from coppeliasimagent.tools import (
+    diagnostics,
     dynamics,
     grasp,
     kinematics,
@@ -736,6 +737,25 @@ class TestTools(unittest.TestCase):
         self.assertFalse(state_paused["is_running"])
         self.assertEqual(state_stopped["state"], "simulation_stopped")
         self.assertFalse(state_stopped["is_running"])
+
+    def test_remote_api_diagnostics_captures_connection_failure(self) -> None:
+        with patch(
+            "coppeliasimagent.tools.diagnostics._socket_probe",
+            return_value={"ok": False, "error": {"message": "closed"}},
+        ), patch(
+            "coppeliasimagent.tools.diagnostics.SimConnection",
+            side_effect=RuntimeError("remote api unavailable"),
+        ):
+            out = diagnostics.collect_remote_api_diagnostics(
+                timeout_s=0.1,
+                include_process_probe=False,
+                include_scene_sample=False,
+            )
+
+        self.assertFalse(out["ok"])
+        self.assertFalse(out["remote_api"]["connected"])
+        self.assertEqual(out["remote_api"]["error"]["type"], "RuntimeError")
+        self.assertIn("remote api unavailable", out["remote_api"]["error"]["message"])
 
     def test_duplicate_object_with_offset(self) -> None:
         sim = FakeSim()

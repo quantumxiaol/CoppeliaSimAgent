@@ -1,5 +1,6 @@
 """Toolbox for scene building, perception and control."""
 
+from .diagnostics import collect_remote_api_diagnostics
 from .kinematics import (
     actuate_gripper,
     actuate_youbot_gripper,
@@ -94,6 +95,7 @@ __all__ = [
     "check_collision",
     "check_collision_monitor",
     "configure_abb_arm_drive",
+    "collect_remote_api_diagnostics",
     "create_pusher_tool_for_abb",
     "create_point_cloud_surface_from_shape",
     "create_point_cloud_pottery_cylinder",

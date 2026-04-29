@@ -337,6 +337,7 @@ uv run test/live_task_point_cloud_polishing.py
 
 - `get_simulation_state()`
 - `get_plugin_status(plugin_names, refresh)`
+- `collect_remote_api_diagnostics(host, port, timeout_s, plugin_names, include_scene_sample, object_name_queries, scene_sample_limit, include_process_probe, probe_step)`
 - `start_simulation()`
 - `pause_simulation()`
 - `stop_simulation()`
@@ -445,11 +446,13 @@ uv run test/live_task_point_cloud_polishing.py
 
 - `setup_ik_link` / `move_ik_target` 已经实现；如果执行时报 `PluginUnavailableError: Plugin 'simIK' is unavailable`，优先说明当前运行中的 CoppeliaSim 实例没有暴露 `simIK`，不是项目 venv 缺 Python 包。
 - 机器人任务优先使用 `move_ik_target_checked`、`execute_stepped_ik_path_checked` 和 `push_object_with_abb`。这些工具会返回 tip-target 残差、关节变化量、接触/移动证据和结构化失败原因，例如 `IK_TARGET_UNREACHABLE`、`JOINTS_NOT_MOVING`、`NO_CONTACT`。
+- `collect_remote_api_diagnostics` 用于排查 ZMQ Remote API 卡死/超时：它会汇总 socket 探测、Remote API 连接异常、插件状态、仿真状态、场景对象样本和 traceback。
 - 可以先直接调用下面两个命令确认：
 
 ```bash
 uv run coppelia-toolcli call get_plugin_status
 uv run coppelia-toolcli call get_plugin_status --payload '{"refresh":true}'
+uv run coppelia-toolcli call collect_remote_api_diagnostics --payload '{"timeout_s":5,"include_scene_sample":true}'
 ```
 
 - `pythonWrapperV2.lua` / `pyzmq` / `cbor2` 日志是另一类问题。它指向 simulator 侧 Python 脚本包装器或解释器配置，不等同于 `simIK` 缺失。
