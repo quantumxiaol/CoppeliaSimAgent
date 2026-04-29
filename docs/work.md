@@ -1,51 +1,91 @@
-你是 CoppeliaSim 外部控制 Agent。请使用 skills/SKILLS.md 中的 toolcli 工具完成一次“ABB IRB4600 在仿真运行态推动桌面圆柱”的物理演示。必须先查看相关工具 schema，不要猜参数。
+你是 CoppeliaSim 外部控制 Agent。请使用 `skills/SKILLS.md` 中提供的工具，完成一次“ABB IRB4600 在仿真运行态推动桌面圆柱罐子”的物理演示。
 
-目标：
-1. 检查 CoppeliaSim 连接、仿真状态和 simIK 插件状态。
-2. 在新场景中创建蓝色方块桌面，替代桌子模型：
-   - 使用 spawn_primitive 创建 primitive="cuboid"。
-   - 建议桌面尺寸 size=[1.10,0.70,0.08]，颜色 color=[0.1,0.25,0.9]。
-   - 建议桌面中心 position=[0.65,0.0,0.74]，此时 table_top_z=0.78。
-   - 桌面必须是静态可碰撞支撑面：使用 set_shape_dynamics 设置 static=true、respondable=true。
-   - 可按 ABB 可达性在合理范围内调整桌面 x/y/z 和尺寸，但桌面底部必须不低于 z=0。
-   - 读取 table handle、pose、size，并确认 table_top_z。
-3. 加载 ABB IRB4600：
-   - model_path="robot_ttm/ABB IRB 4600-40-255.ttm"
-   - base z 必须为 0，禁止把机械臂放到地面以下。
-   - 初始建议 position=[-0.55,0.0,0.0]
-   - 可调整 x/y/yaw，但只能在地面平面内调整。
-4. 创建桌面动态可碰撞圆柱：
-   - primitive="cylinder"
-   - size=[0.16,0.16,0.18]
-   - center=[0.65,0.0,table_top_z+0.09]
-   - dynamic=true
-   - 使用 set_shape_dynamics 设置 static=false、respondable=true、mass=0.5、friction=0.6。
-5. 建立 ABB IK：
-   - 查找 /IRB4600 的 6 个关节。
-   - 查找 /IRB4600/IkTip 和 /IRB4600/IkTarget。
-   - 使用 setup_abb_arm_ik 建立 simIK 链路。
-   - 验证 IkTip 能随 IkTarget 移动。
-6. 在仿真运行态用 ABB 末端推动圆柱：
-   - 先配置 ABB 关节驱动，查看 configure_abb_arm_drive schema 后调用。
-   - 启动仿真后，不要直接移动圆柱。
-   - 让 IkTarget/IkTip 走一条推送路径，例如：
-     pre_contact=[0.45,0.0,table_top_z+0.09]
-     contact_start=[0.56,0.0,table_top_z+0.09]
-     push_end=[0.82,0.0,table_top_z+0.09]
-   - 分 40-80 个小步移动 IkTarget，每步后 step_simulation。
-   - 用实际 IkTip pose 和圆柱 pose 记录推动过程。
-   - 如果 IkTip 不跟随或 ABB 在运行态跳离路径，请先尝试：
-     - 停止仿真并 reset dynamics
-     - configure_abb_arm_drive dynamic/position
-     - 让 IkTarget 和 IkTip 在启动前重合
-     - 调整机械臂 ground x/y/yaw 或圆柱桌面 x/y
-     - 但禁止把 ABB base z 调到负数
-7. 汇报结果：
-   - simIK 是否可用
-   - table handle、table pose、table size、table_top_z
-   - ABB robot handle、joint handles、IkTip handle、IkTarget handle
-   - ABB final base pose
-   - 圆柱 handle、初始/最终 pose、位移距离
-   - IkTip 初始/最终 pose
-   - 是否发生真实仿真物理推动
-   - 如果没有真实推动，要如实说明，不要把直接改圆柱位置或停止态 IK 说成仿真推动。
+这个文档只描述任务目标和评价标准。具体调用哪些工具、如何组合工具、如何调整位置，由 Agent 根据工具 schema、当前场景状态和返回结果自行判断。
+
+## 任务目标
+
+完成以下工作：
+
+1. 检查 CoppeliaSim 连接状态、仿真状态、必要插件状态，以及是否存在残留的工具进程。
+2. 在场景中放置 ABB IRB4600 机械臂。
+3. 创建一个长方体桌面，作为静态、可碰撞的支撑面。
+4. 创建一个圆柱罐子，要求它在仿真中可被推动。
+5. 为 ABB 准备真实可碰撞的末端推动体，而不是只移动 dummy。
+6. 根据 ABB 的实际可达范围调整桌子和罐子位置，不要依赖固定猜测坐标。
+7. 在启动真实推动前，对接近点、接触点、推动终点做可达性检查。
+8. 在仿真运行态推动罐子，并收集数值证据。
+9. 如实汇报是否成功，以及失败原因。
+
+## 工具使用原则
+
+- 必须先查看相关工具 schema，不要猜参数。
+- 优先使用任务级 skill 和 checked primitive。只有诊断失败时，才降级到更底层工具。
+- 机器人动作必须串行执行，不要并行开多个 `toolcli`。
+- 涉及 stepping、IK 执行、接触动力学的过程，应由单个工具或单个进程独占完成。
+- 不要直接设置罐子的最终位置来伪造推动。
+- 如果 CoppeliaSim 图形界面看似正常，但 ZMQ Remote API 不响应，应停止继续堆请求并报告状态。
+
+## 场景与物理要求
+
+- ABB base 应放在合理地面位置，不能为了可达性把机械臂放到地面以下。
+- 桌面应是静态、可碰撞、可支撑物体的长方体。
+- 罐子应有可见圆柱外观，同时具备可参与动力学接触的物理实体。
+- pusher 应是真实 respondable shape，不能只依赖 IK tip/target dummy。
+- 推动方向和桌面/罐子位置应根据可达性和接触几何来决定。
+
+## 执行前检查
+
+在真正推动前，Agent 应确认：
+
+- Remote API 和必要插件可用。
+- ABB、桌面、罐子、pusher 都能被识别。
+- 罐子是非静态且可响应碰撞的物体。
+- 桌面是静态且可响应碰撞的支撑面。
+- ABB IK 链路可用。
+- 接近点、接触点、推动终点均可达。
+
+如果任一点不可达，不应启动 pushing。应调整桌子/罐子/机器人相对位置，或报告不可达原因。
+
+## 推动过程
+
+推动应发生在仿真运行态。Agent 应让 ABB 末端推动体接近罐子、形成接触，并沿合理方向推动罐子。推动过程中应尽量使用同步 stepping，而不是依赖 sleep 猜测仿真进度。
+
+如果工具返回结构化失败原因，应优先根据该失败原因继续诊断，而不是盲目重试。
+
+## 成功判据
+
+任务成功需要有数值证据支持，包括：
+
+- IK preflight 成功，tip-target 误差在合理范围内。
+- 罐子在仿真中发生了位移。
+- 位移方向与推动方向基本一致。
+- 罐子最终速度足够低，说明已经稳定。
+- 有接触、碰撞或等价的动力学证据。
+
+如果罐子移动了，但没有采集到接触证据，应说明“物体发生了仿真移动，但接触证据不完整”，不要表述为完全成功。
+
+## 失败分类
+
+失败时请尽量归类：
+
+- IK 目标不可达。
+- pusher 不存在或不是真实碰撞体。
+- 罐子或桌子的动力学属性不正确。
+- 末端到达了目标点，但没有形成有效接触。
+- 物体移动不足或方向不对。
+- Remote API stepping 超时。
+- ZMQ Remote API 半卡住。
+
+如果 ZMQ Remote API 半卡住，工具通常无法通过同一条通道可靠恢复仿真。此时应报告诊断结果，避免继续调用机器人动作工具。
+
+## 汇报内容
+
+最终汇报应简洁包含：
+
+- 使用到的主要工具或 skill。
+- ABB、桌子、罐子、pusher 是否创建或识别成功。
+- 可达性检查结果。
+- 推动前后的罐子位姿和位移。
+- 是否发生接触或等价动力学证据。
+- 仿真/Remote API 是否仍处于可用状态。
+- 成功或失败结论，以及失败原因。
